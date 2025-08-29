@@ -39,3 +39,6 @@ reports/
 *.tmp
 *.temp
 .trashed/
+
+# Reference data
+erad_dummy.tsv
