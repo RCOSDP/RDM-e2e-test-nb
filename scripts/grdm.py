@@ -242,10 +242,13 @@ async def ensure_project_exists(page, project_name, transition_timeout=30000):
         await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible(timeout=transition_timeout)
         return True    
 
-async def delete_project(page, transition_timeout=30000):
+async def delete_project(page, transition_timeout=30000, is_component=False):
     await page.locator(f'//ul[contains(@class, "navbar-nav")]//a[text() = "設定"]').click()
     await asyncio.sleep(3)
-    await page.locator('//button[text() = "プロジェクトを削除" and @data-target = "#nodesDelete"]').click()
+    if is_component:
+        await page.locator('//button[text() = "コンポーネントを削除" and @data-target = "#nodesDelete"]').click()
+    else:
+        await page.locator('//button[text() = "プロジェクトを削除" and @data-target = "#nodesDelete"]').click()
 
     confirmation_label = page.locator('//strong[@data-bind = "text: confirmationString"]')
     await expect(confirmation_label).to_have_count(1, timeout=transition_timeout)
@@ -471,3 +474,42 @@ async def verify_property_folder_info(
     await expect(locator_path).to_have_text(folderpath)
 
     time.sleep(1)
+
+async def login_after_logout(page, idp_name, idp_username, idp_password, transition_timeout=30000):
+    if idp_name is None:
+        # CASでログイン
+        if '/login' not in page.url:
+            # 現在CAS以外→一旦ログインボタンを押す
+            await page.locator('//button[text() = "ログイン"]').click()
+        await login_cas(page, idp_username, idp_password)
+        return
+    # FakeCASの場合の処理
+    if idp_name == 'FakeCAS':
+        # FakeCAS(port 8080)でない場合のみサインインボタンをクリック
+        if ':8080' not in page.url:
+            await page.locator('//button[@data-test-sign-in-button]').click()
+        await login_fakecas(page, idp_username)
+        return
+    # 通常のIdP選択フロー（GakuNin RDM IdP, Orthrosなど）
+    try:
+        await page.locator('//*[@id = "clear_a"]').click()
+        # IdPが要素として作成されることを確認
+        # locator = page.locator(f'//*[@class = "list_idp" and text() = "{idp_name}"]')
+        locator = page.locator(f'//*[contains(@class, "list_idp") and normalize-space(text())="{idp_name}"]')
+        # locator = page.locator('//*[contains(@class, "list_idp") and normalize-space(text())="GakuNin RDM IdP"]').first
+        await expect(locator).to_be_visible(timeout=transition_timeout)
+        time.sleep(5)
+        await locator.click()
+
+        # 選択ボタンが有効になったことを確認
+        locator_wayf_submit = page.locator('//input[@id = "wayf_submit_button"]')
+        await expect(locator_wayf_submit).to_be_enabled(timeout=transition_timeout)
+        await locator_wayf_submit.click()
+        # アカウント入力欄が編集可能になったことを確認
+        await expect_idp_login(page, idp_name, timeout=transition_timeout)
+        await _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=transition_timeout)
+    except:
+        traceback.print_exc()
+        print('ユーザー名とパスワードによるログインを試みます...')
+        # すでにIdP選択済みとみなし、ユーザー名とパスワード入力を試みる
+        await _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=transition_timeout)
