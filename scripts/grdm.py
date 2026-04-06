@@ -448,8 +448,6 @@ async def display_property_file_info(page, provider, filesize, filepath):
     await locator_path.scroll_into_view_if_needed()
     await expect(locator_path).to_have_text(filepath)
 
-    await page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "閉じる"]').scroll_into_view_if_needed()
-    await expect(page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "閉じる"]')).to_be_enabled(timeout=60000)
     time.sleep(1)
 
 async def display_property_folder_info(page, provider, filenumber, foldersize, folderpath):
@@ -494,6 +492,4 @@ async def display_property_folder_info(page, provider, filenumber, foldersize, f
     await locator_path.scroll_into_view_if_needed()
     await expect(locator_path).to_have_text(folderpath)
 
-    await page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "閉じる"]').scroll_into_view_if_needed()
-    await expect(page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "閉じる"]')).to_be_enabled(timeout=60000)
     time.sleep(1)
