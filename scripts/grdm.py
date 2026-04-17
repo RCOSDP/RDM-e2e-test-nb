@@ -405,3 +405,94 @@ async def enable_addon(page, addon_name, transition_timeout=10000):
         await confirm_button.click()
     else:
         print('Addon already enabled')
+
+async def display_property_file_info(page, provider, filesize, filepath):
+    locator_size = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "サイズ: "]/following-sibling::span')
+    locator_createtime = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "作成日時: "]/following-sibling::span')
+    locator_updatetime = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "更新日時: "]/following-sibling::span')
+    locator_updateby = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "最終更新者: "]/following-sibling::span')
+    locator_path = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "パス: "]/following-sibling::span')
+    
+    # サイズ
+    await locator_size.scroll_into_view_if_needed()
+    await expect(locator_size).to_have_text(filesize)
+    time.sleep(1)
+    if provider == 'NII Storage':
+        # 作成日時
+        await locator_createtime.scroll_into_view_if_needed()
+        await expect(locator_createtime).not_to_be_empty()
+        # 更新日時
+        await locator_updatetime.scroll_into_view_if_needed()
+        await expect(locator_updatetime).not_to_be_empty()
+        # 最終更新者
+        await locator_updateby.scroll_into_view_if_needed()
+        await expect(locator_updateby).not_to_be_empty()
+    elif provider in ['Google Drive', 'OneDrive']:
+        # 作成日時
+        await locator_createtime.scroll_into_view_if_needed()
+        await expect(locator_createtime).not_to_be_empty()
+        # 更新日時
+        await locator_updatetime.scroll_into_view_if_needed()
+        await expect(locator_updatetime).not_to_be_empty()
+        # 最終更新者
+        await locator_updateby.scroll_into_view_if_needed()
+        await expect(locator_updateby).to_be_empty()
+    else:
+        # 作成日時
+        await locator_createtime.scroll_into_view_if_needed()
+        await expect(locator_createtime).to_be_empty()
+        # 更新日時
+        await locator_updatetime.scroll_into_view_if_needed()
+        await expect(locator_updatetime).not_to_be_empty()
+        # 最終更新者
+        await locator_updateby.scroll_into_view_if_needed()
+        await expect(locator_updateby).to_be_empty()
+    # パス
+    await locator_path.scroll_into_view_if_needed()
+    await expect(locator_path).to_have_text(filepath)
+
+    time.sleep(1)
+
+async def display_property_folder_info(page, provider, filenumber, foldersize, folderpath):
+    await expect(page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "読み込み中..."]')).not_to_be_visible(timeout=60000)
+    time.sleep(2)
+
+    locator_filenumber = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "合計ファイル数: "]/following-sibling::span')
+    locator_size = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "合計サイズ: "]/following-sibling::span')
+    locator_createtime = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "作成日時: "]/following-sibling::span')
+    locator_updatetime = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "更新日時: "]/following-sibling::span')
+    locator_updateby = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "最終更新者: "]/following-sibling::span')
+    locator_path = page.locator('//*[@id = "tb-tbody"]//*[@class = "modal-content"]//*[text() = "パス: "]/following-sibling::span')
+    
+    # 合計ファイル数
+    await locator_filenumber.scroll_into_view_if_needed()
+    await expect(locator_filenumber).to_have_text(filenumber)
+    # 合計サイズ
+    await locator_size.scroll_into_view_if_needed()
+    await expect(locator_size).to_have_text(foldersize)
+    time.sleep(1)
+    if provider == 'NII Storage':
+        # 作成日時
+        await locator_createtime.scroll_into_view_if_needed()
+        await expect(locator_createtime).not_to_be_empty()
+        # 更新日時
+        await locator_updatetime.scroll_into_view_if_needed()
+        await expect(locator_updatetime).not_to_be_empty()
+        # 最終更新者
+        await locator_updateby.scroll_into_view_if_needed()
+        await expect(locator_updateby).to_be_empty()
+    else:
+        # 作成日時
+        await locator_createtime.scroll_into_view_if_needed()
+        await expect(locator_createtime).to_be_empty()
+        # 更新日時
+        await locator_updatetime.scroll_into_view_if_needed()
+        await expect(locator_updatetime).to_be_empty()
+        # 最終更新者
+        await locator_updateby.scroll_into_view_if_needed()
+        await expect(locator_updateby).to_be_empty()
+    # パス
+    await locator_path.scroll_into_view_if_needed()
+    await expect(locator_path).to_have_text(folderpath)
+
+    time.sleep(1)
