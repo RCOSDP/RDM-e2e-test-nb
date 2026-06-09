@@ -43,6 +43,28 @@ test_users = [
         'password': 'testpass321',
         'institution': 'Massachusetts Institute of Technology [Test]',
     },
+    {
+        'username': 'testuser4@example.com',
+        'fullname': 'Test User 4',
+        'given_name': 'Test',
+        'family_name': 'User 4',
+        'given_name_ja': 'テスト',
+        'family_name_ja': 'ユーザー4',
+        'password': 'testpass654',
+        'institution': 'Massachusetts Institute of Technology [Test]',
+        'skip_project': True,  # Dedicated user for project limit tests; no pre-created project
+    },
+    {
+        'username': 'testuser5@example.com',
+        'fullname': 'Test User 5',
+        'given_name': 'Test',
+        'family_name': 'User 5',
+        'given_name_ja': 'テスト',
+        'family_name_ja': 'ユーザー5',
+        'password': 'testpass987',
+        'institution': 'Massachusetts Institute of Technology [Test]',
+        'skip_project': True,  # Dedicated user for project limit tests; no pre-created project
+    },
 ]
 
 for user_data in test_users:
@@ -93,36 +115,44 @@ for user_data in test_users:
         user.emails.create(address=username)
         print(f"Created test user: {username}")
         
-        # Create a project for the new user
-        project = Node(
-            title=f"Test Project for {user_data['fullname']}",
-            creator=user,
-            category="project",
-            is_public=False
-        )
-        project.save()
-        print(f"Created test project: {project._id} for user: {username}")
-        # Output for CI config
-        print(f"PROJECT_ID_{username}: {project._id}")
-        print(f"PROJECT_NAME_{username}: {project.title}")
-    else:
-        print(f"Test user already exists: {username}")
-        # Ensure existing user has at least one project
-        user = OSFUser.objects.get(username=username)
-        if not user.nodes.filter(category='project').exists():
+        # Skip project creation for dedicated CI users (e.g. project limit test user)
+        if user_data.get('skip_project', False):
+            print(f"Skipping project creation for {username} (skip_project=True)")
+        else:
+            # Create a project for the new user
             project = Node(
-                title=f"Test Project for {user.fullname}",
+                title=f"Test Project for {user_data['fullname']}",
                 creator=user,
                 category="project",
                 is_public=False
             )
             project.save()
-            print(f"Created test project: {project._id} for existing user: {username}")
+            print(f"Created test project: {project._id} for user: {username}")
+            # Output for CI config
+            print(f"PROJECT_ID_{username}: {project._id}")
+            print(f"PROJECT_NAME_{username}: {project.title}")
+    else:
+        print(f"Test user already exists: {username}")
+        # Skip project check for dedicated users that should not have projects
+        if user_data.get('skip_project', False):
+            print(f"Skipping project creation for {username} (skip_project=True)")
         else:
-            project = user.nodes.filter(category='project').first()
-        # Output for CI config
-        print(f"PROJECT_ID_{username}: {project._id}")
-        print(f"PROJECT_NAME_{username}: {project.title}")
+            # Ensure existing user has at least one project
+            user = OSFUser.objects.get(username=username)
+            if not user.nodes.filter(category='project').exists():
+                project = Node(
+                    title=f"Test Project for {user.fullname}",
+                    creator=user,
+                    category="project",
+                    is_public=False
+                )
+                project.save()
+                print(f"Created test project: {project._id} for existing user: {username}")
+            else:
+                project = user.nodes.filter(category='project').first()
+            # Output for CI config
+            print(f"PROJECT_ID_{username}: {project._id}")
+            print(f"PROJECT_NAME_{username}: {project.title}")
 
 # Affiliate users with institution
 for user_data in test_users:
