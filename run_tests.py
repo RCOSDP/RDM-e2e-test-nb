@@ -537,6 +537,21 @@ class TestRunner:
             )
         )
 
+    def run_mapcore_group_tests(self):
+        """Run Mapcore group tests."""
+        print('\n=== Mapcore group Tests ===')
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                '取りまとめ-グループ.ipynb',
+                admin_rdm_url=self.admin_rdm_url,
+                admin_idp_username_1 = self.idp_username_institutional_admin,
+                admin_idp_password_1 = self.idp_password_institutional_admin,
+                skip_failed_test=self.skip_failed_test,
+                exclude_notebooks=self.exclude_notebooks,
+            )
+        )
+
     def check_notebook_errors(self, notebook_path):
         """Check a notebook and all its sub-notebooks recursively for execution errors."""
         all_errors = []
@@ -639,6 +654,7 @@ class TestRunner:
         self.run_jupyterhub_tests()
         self.run_weko_tests()
         self.run_workflow_tests()
+        self.run_mapcore_group_tests()
         
         result_notebooks = [result_notebook for result_notebook in self.result_notebooks if result_notebook is not None]
         
