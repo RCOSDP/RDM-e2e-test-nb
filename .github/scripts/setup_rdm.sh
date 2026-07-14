@@ -337,7 +337,7 @@ EOL
         bash "${script_dir}/setup_minio.sh" apply "${PWD}"
     fi
 
-    if [ "${WEKO_ENABLED:-false}" = "true" ]; then
+    if [ "${WEKO_ENABLED:-false}" = "true" ] || [ "${SKIP_METADATA:-false}" = "false" ]; then
         local script_dir
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
         python3 "${script_dir}/weko_setup_cert.py" \

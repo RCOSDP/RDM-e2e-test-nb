@@ -73,6 +73,31 @@ case "$COMMAND" in
       exit 1
     fi
 
+    # Create AMS itemtype
+    echo 'create ams itemtype'
+    pg_container=$(docker compose -f "${compose_file}" ps -q postgresql)
+    docker cp "${SCRIPT_DIR}/../patches/item_type_name.sql" "${pg_container}:/tmp/ams_itemtype_name.sql"
+    docker cp "${SCRIPT_DIR}/../patches/item_type.sql" "${pg_container}:/tmp/ams_itemtype.sql"
+    docker cp "${SCRIPT_DIR}/../patches/item_type_mapping.sql" "${pg_container}:/tmp/ams_itemtype_mapping.sql"
+    docker cp "${SCRIPT_DIR}/../patches/rocrate_mapping.sql" "${pg_container}:/tmp/ams_rocrate_mapping.sql"
+    docker cp "${SCRIPT_DIR}/../patches/facet_search_setting.sql" "${pg_container}:/tmp/ams_facet_search_setting.sql"
+    docker compose -f "${compose_file}" exec -T postgresql psql -U invenio -d invenio -f /tmp/ams_itemtype_name.sql
+    docker compose -f "${compose_file}" exec -T postgresql psql -U invenio -d invenio -f /tmp/ams_itemtype.sql
+    docker compose -f "${compose_file}" exec -T postgresql psql -U invenio -d invenio -f /tmp/ams_itemtype_mapping.sql
+    docker compose -f "${compose_file}" exec -T postgresql psql -U invenio -d invenio -f /tmp/ams_rocrate_mapping.sql
+    docker compose -f "${compose_file}" exec -T postgresql psql -U invenio -d invenio -f /tmp/ams_facet_search_setting.sql
+
+    echo 'add free textarea to file property'
+    docker compose -f "${compose_file}" exec -T web invenio shell /code/tools/add_free_textarea.py
+
+    echo 'create search settings'
+    record_count=$(docker compose -f "${compose_file}" exec -T postgresql psql -U invenio -d invenio -t -c 'SELECT count(*) FROM search_management;')
+    if [ "${record_count}" -lt 1 ]; then
+        docker cp "${WEKO_ROOT}/scripts/demo/ams/search_management.sql" "${pg_container}:/tmp/ams_search_management.sql"
+        docker compose -f "${compose_file}" exec -T postgresql psql -U invenio -d invenio -f /tmp/ams_search_management.sql
+    fi
+    docker compose -f "${compose_file}" exec -T web invenio shell /code/scripts/demo/ams/update_search_management.py
+
     # Update SWORD mapping for item type 30002
     echo "=== Updating SWORD Mapping 30002 ==="
     mapping_json=$(cat "${SCRIPT_DIR}/../patches/sword_mapping_30002.json")
@@ -85,6 +110,32 @@ obj.mapping = mapping
 from invenio_db import db
 db.session.commit()
 print('Updated mapping 30002')
+"
+
+    # Insert/Update SWORD mapping for item type 51000
+    echo "=== Updating SWORD Mapping 51000 ==="
+    mapping_json=$(cat "${SCRIPT_DIR}/../patches/sword_mapping_51000.json")
+    docker compose -f "${compose_file}" exec -T web invenio shell -c "
+from weko_records.api import JsonldMapping
+from weko_records.models import ItemTypeJsonldMapping
+from invenio_db import db
+import json
+mapping = json.loads('''${mapping_json}''')
+obj = JsonldMapping.get_mapping_by_id(51000)
+if obj is None:
+    obj = ItemTypeJsonldMapping(
+        id = 51000,
+        name = '未病アイテムタイプ',
+        mapping = mapping,
+        item_type_id = 51000,
+    )
+    db.session.add(obj)
+    db.session.commit()
+    print('Created mapping 51000')
+else:
+    obj.mapping = mapping
+    db.session.commit()
+    print('Updated mapping 51000')
 "
 
     # Grant contributor access to Sample Index
@@ -132,6 +183,24 @@ from weko_records.api import JsonldMapping
 from weko_search_ui.mapper import JsonLdMapper
 import json
 obj = JsonldMapping.get_mapping_by_id(30002)
+errs = JsonLdMapper(obj.item_type_id, obj.mapping).validate()
+result = {"mapping_id": obj.id, "item_type_id": obj.item_type_id, "name": obj.name, "valid": errs is None, "errors": errs or []}
+print(json.dumps({"result": result, "invalid": 0 if errs is None else 1}, ensure_ascii=False))
+')
+    echo "${validation_result}"
+    invalid_count=$(echo "${validation_result}" | python3 -c "import sys, json; print(json.load(sys.stdin)['invalid'])")
+    if [[ "${invalid_count}" -gt 0 ]]; then
+      echo "SWORD mapping validation failed: ${invalid_count} invalid mapping(s)" >&2
+      exit 1
+    fi
+
+    # Validate SWORD mapping 51000
+    echo "=== SWORD Mapping Validation (51000) ==="
+    validation_result=$(docker compose -f "${compose_file}" exec -T web invenio shell -c '
+from weko_records.api import JsonldMapping
+from weko_search_ui.mapper import JsonLdMapper
+import json
+obj = JsonldMapping.get_mapping_by_id(51000)
 errs = JsonLdMapper(obj.item_type_id, obj.mapping).validate()
 result = {"mapping_id": obj.id, "item_type_id": obj.item_type_id, "name": obj.name, "valid": errs is None, "errors": errs or []}
 print(json.dumps({"result": result, "invalid": 0 if errs is None else 1}, ensure_ascii=False))

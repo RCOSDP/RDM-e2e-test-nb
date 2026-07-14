@@ -62,6 +62,7 @@ class TestRunner:
         self.weko_index_name = None
         self.weko_docker_compose_path = None
         self.sword_mapping_id = 30002
+        self.mibyo_db_sword_mapping_id = 51000
         self.weko_test_mode = 'direct'
         self.ignore_https_errors = False
         # S3CompatSigV4 specific parameters
@@ -372,12 +373,23 @@ class TestRunner:
             self.result_notebooks.append(
                 self.run_notebook(
                     '取りまとめ-Metadataアドオン.ipynb',
+                    admin_rdm_url=self.admin_rdm_url,
+                    weko_url=self.weko_url,
+                    weko_admin_email=self.weko_admin_email,
+                    weko_admin_password=self.weko_admin_password,
+                    weko_index_name=self.weko_index_name,
+                    idp_name_institutional_admin=self.idp_name_institutional_admin,
+                    idp_username_institutional_admin=self.idp_username_institutional_admin,
+                    idp_password_institutional_admin=self.idp_password_institutional_admin,
                     idp_name_2=getattr(self, 'idp_name_2', None),
                     idp_username_2=getattr(self, 'idp_username_2', None),
                     idp_password_2=getattr(self, 'idp_password_2', None),
                     skip_failed_test=self.skip_failed_test,
                     skip_autofill=self.skip_autofill,
                     exclude_notebooks=self.exclude_notebooks,
+                    weko_docker_compose_path=self.weko_docker_compose_path,
+                    sword_mapping_id=self.mibyo_db_sword_mapping_id,
+                    ignore_https_errors=self.ignore_https_errors,
                 )
             )
             
