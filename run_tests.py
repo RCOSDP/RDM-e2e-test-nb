@@ -52,6 +52,7 @@ class TestRunner:
         self.tljh_username = None
         self.tljh_password = None
         self.weko_enabled = False
+        self.mibyo_db_enabled = False
         # WEKO / JAIRO Cloud specific parameters
         self.weko_url = None
         self.weko_admin_email = None
@@ -373,23 +374,12 @@ class TestRunner:
             self.result_notebooks.append(
                 self.run_notebook(
                     '取りまとめ-Metadataアドオン.ipynb',
-                    admin_rdm_url=self.admin_rdm_url,
-                    weko_url=self.weko_url,
-                    weko_admin_email=self.weko_admin_email,
-                    weko_admin_password=self.weko_admin_password,
-                    weko_index_name=self.weko_index_name,
-                    idp_name_institutional_admin=self.idp_name_institutional_admin,
-                    idp_username_institutional_admin=self.idp_username_institutional_admin,
-                    idp_password_institutional_admin=self.idp_password_institutional_admin,
                     idp_name_2=getattr(self, 'idp_name_2', None),
                     idp_username_2=getattr(self, 'idp_username_2', None),
                     idp_password_2=getattr(self, 'idp_password_2', None),
                     skip_failed_test=self.skip_failed_test,
                     skip_autofill=self.skip_autofill,
                     exclude_notebooks=self.exclude_notebooks,
-                    weko_docker_compose_path=self.weko_docker_compose_path,
-                    sword_mapping_id=self.mibyo_db_sword_mapping_id,
-                    ignore_https_errors=self.ignore_https_errors,
                 )
             )
             
@@ -495,6 +485,42 @@ class TestRunner:
                 idp_password_2=getattr(self, 'idp_password_2', None),
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
+            )
+        )
+
+    def run_mibyo_db_tests(self):
+        """Run Mibyo DB tests."""
+        print('\n=== Mibyo DB Tests ===')
+        if not self.mibyo_db_enabled:
+            print('Skipping Mibyo DB tests (mibyo_db_enabled=false)')
+            return
+
+        missing_params = [
+            name for name in [
+                'weko_url', 'weko_admin_email', 'weko_admin_password',
+                'weko_index_name', 'weko_docker_compose_path'
+            ]
+            if not getattr(self, name, None)
+        ]
+        if missing_params:
+            print('Error: Missing Mibyo DB parameters: ' + ', '.join(missing_params))
+            sys.exit(1)
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                'テスト手順-Metadataアドオン-未病データベース.ipynb',
+                admin_rdm_url=self.admin_rdm_url,
+                myproject_url=self.rdm_url + 'myprojects/',
+                idp_name_institutional_admin=self.idp_name_institutional_admin,
+                idp_username_institutional_admin=self.idp_username_institutional_admin,
+                idp_password_institutional_admin=self.idp_password_institutional_admin,
+                weko_url=self.weko_url,
+                weko_admin_email=self.weko_admin_email,
+                weko_admin_password=self.weko_admin_password,
+                weko_index_name=self.weko_index_name,
+                weko_docker_compose_path=self.weko_docker_compose_path,
+                sword_mapping_id=self.mibyo_db_sword_mapping_id,
+                ignore_https_errors=self.ignore_https_errors,
             )
         )
 
@@ -655,6 +681,7 @@ class TestRunner:
         self.run_admin_tests()
         self.run_jupyterhub_tests()
         self.run_weko_tests()
+        self.run_mibyo_db_tests()
         self.run_workflow_tests()
         
         result_notebooks = [result_notebook for result_notebook in self.result_notebooks if result_notebook is not None]
