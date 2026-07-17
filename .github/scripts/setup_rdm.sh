@@ -232,7 +232,8 @@ create_docker_override() {
     local mfr_image="${MFR_IMAGE:-niicloudoperation/rdm-modular-file-renderer:latest}"
     local wb_image="${WB_IMAGE:-niicloudoperation/rdm-waterbutler:latest}"
     local elasticsearch_image="${ELASTICSEARCH_IMAGE:-elasticsearch:2}"
-    
+    local y_websocket_url="${Y_WEBSOCKET_URL:-}"
+
     echo "Creating docker-compose override with:"
     echo "  OSF: $osf_image"
     echo "  Ember: $ember_image"
@@ -240,6 +241,9 @@ create_docker_override() {
     echo "  MFR: $mfr_image"
     echo "  WaterButler: $wb_image"
     echo "  Elasticsearch: $elasticsearch_image"
+    if [ -n "$y_websocket_url" ]; then
+        echo "  Y-WebSocket: $y_websocket_url"
+    fi
 
     cat > docker-compose.override.yml << EOL
 # NII Cloud Operation images override
@@ -275,6 +279,7 @@ services:
     environment:
       OAUTHLIB_INSECURE_TRANSPORT: '1'
       KAKEN_ELASTIC_URI: http://kaken_elasticsearch:9200
+      Y_WEBSOCKET_URL: '${y_websocket_url}'
   worker:
     image: ${osf_image}
     environment:

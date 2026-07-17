@@ -75,6 +75,11 @@ async def run_pw(f, last_path=default_last_path, screenshot=True, permissions=No
         try:
             next_page = await f(current_pages[-1])
         except:
+            try:
+                await _save_dom(last_path=last_path)
+            except Exception:
+                print('DOMダンプの取得に失敗しました。', file=sys.stderr)
+                traceback.print_exc()
             if context_close_on_fail:
                 await finish_pw_context(screenshot=screenshot, last_path=last_path)
                 raise
@@ -168,10 +173,31 @@ async def _save_screenshot(last_path=None):
     if current_pages is None or len(current_pages) == 0:
         return
     screenshot_path = os.path.join(temp_dir, 'last-screenshot.png')
-    await current_pages[-1].screenshot(path=screenshot_path)
+    await current_pages[-1].screenshot(path=screenshot_path, full_page=True)
     dest_screenshot_path = os.path.join(last_path or default_last_path, 'last-screenshot.png')
     shutil.copyfile(screenshot_path, dest_screenshot_path)
     print(f'Screenshot: {dest_screenshot_path}')
+
+async def _save_dom(last_path=None):
+    if current_contexts is None or len(current_contexts) == 0:
+        return
+    _, current_pages = current_contexts[-1]
+    if current_pages is None or len(current_pages) == 0:
+        return
+    os.makedirs(last_path or default_last_path, exist_ok=True)
+    page = current_pages[-1]
+    parts = []
+    # Dump every frame; do not assume which frame holds the form.
+    for frame in page.frames:
+        try:
+            content = await frame.content()
+        except Exception as e:
+            content = f'<!-- frame unavailable url={frame.url}: {e} -->'
+        parts.append(f'<!-- ===== FRAME url={frame.url} name={frame.name} ===== -->\n{content}')
+    dest_dom_path = os.path.join(last_path or default_last_path, 'last-dom.html')
+    with open(dest_dom_path, 'w', encoding='utf-8') as fh:
+        fh.write('\n\n'.join(parts))
+    print(f'DOM: {dest_dom_path}')
 
 async def _finish_pw_context(screenshot=False, last_path=None):
     global current_contexts

@@ -1,5 +1,8 @@
+import os
 from django.utils import timezone
 from osf.models import OSFUser, Node, Institution
+
+WIKI_ENABLED = os.environ.get('WIKI_ENABLED', 'false').lower() == 'true'
 
 INSTITUTION_NAME = 'Virginia Tech [Test]'
 
@@ -44,6 +47,42 @@ test_users = [
         'institution': 'Massachusetts Institute of Technology [Test]',
     },
 ]
+
+def create_rdmuserkey(user):
+    # このスクリプトは `manage.py shell < file` で exec されるため、
+    # 関数内で使うシンボルは関数内で import する（トップレベル import は関数から見えない）
+    import hashlib
+    from django.utils import timezone
+    from osf.models.rdm_user_key import RdmUserKey
+
+    PRIVATE_KEY_VALUE = 1
+    PUBLIC_KEY_VALUE = 2
+
+    if RdmUserKey.objects.filter(guid=user.id).exists():
+        print(f"RdmUserKey already exists for user: {user.username}")
+        return
+    
+    now = timezone.now()
+    date_hash = hashlib.md5(now.strftime('%Y%m%d%H%M%S').encode('utf-8')).hexdigest()
+    pvt_key_name = f'{user._id}_{date_hash}_pvt.pem'
+    pub_key_name = f'{user._id}_{date_hash}_pub.pem'
+
+    pvt_key = RdmUserKey()
+    pvt_key.guid = user.id
+    pvt_key.key_name = pvt_key_name
+    pvt_key.key_kind = PRIVATE_KEY_VALUE
+    pvt_key.created_time = now
+    pvt_key.save()
+
+    pub_key = RdmUserKey()
+    pub_key.guid = user.id
+    pub_key.key_name = pub_key_name
+    pub_key.key_kind = PUBLIC_KEY_VALUE
+    pub_key.created_time = now
+    pub_key.save()
+
+    print(f"Created RdmUserKey (pvt+pub) for user: {user.username}")
+
 
 for user_data in test_users:
     username = user_data['username']
@@ -93,6 +132,10 @@ for user_data in test_users:
         user.emails.create(address=username)
         print(f"Created test user: {username}")
         
+        # Create user key (only needed when Wiki is enabled)
+        if WIKI_ENABLED:
+            create_rdmuserkey(user)
+
         # Create a project for the new user
         project = Node(
             title=f"Test Project for {user_data['fullname']}",
@@ -109,6 +152,11 @@ for user_data in test_users:
         print(f"Test user already exists: {username}")
         # Ensure existing user has at least one project
         user = OSFUser.objects.get(username=username)
+
+        # Create user key (only needed when Wiki is enabled)
+        if WIKI_ENABLED:
+            create_rdmuserkey(user)
+
         if not user.nodes.filter(category='project').exists():
             project = Node(
                 title=f"Test Project for {user.fullname}",

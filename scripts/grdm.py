@@ -471,3 +471,177 @@ async def verify_property_folder_info(
     await expect(locator_path).to_have_text(folderpath)
 
     time.sleep(1)
+    
+async def open_wiki(page, wikiname, text, transition_timeout=60000):
+    await page.locator(f'//*[contains(@class, "title-text")]//a[text()="{wikiname}"]').click()
+    await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#pageName')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#pageName')).to_have_text(wikiname, timeout=transition_timeout)
+    await expect(page.locator('#wikiViewRender')).to_contain_text(text, timeout=transition_timeout)
+
+async def open_edit_wiki(page, transition_timeout=60000):
+    await page.locator('//div[@id="editWysiwyg"]//span[normalize-space()="編集"]').click()
+    await expect(page.locator('#mMenuBar')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#mEditor .ProseMirror[contenteditable="true"]')).to_be_visible(timeout=transition_timeout)
+
+async def select_text_range(page, text, transition_timeout=60000):
+    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    await editor_locator.focus()
+    await editor_locator.evaluate("""
+    (el, targetText) => {
+        const p = Array.from(el.querySelectorAll('p')).find(par => par.innerText === targetText);
+        if (!p) return;
+        let textNode = p.firstChild;
+        if (textNode.nodeType !== Node.TEXT_NODE) {
+            textNode = textNode.firstChild;
+        }
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, textNode.length);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+    """, text)
+
+async def fill_text(page, text, transition_timeout=60000):
+    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    await editor_locator.click()
+    await editor_locator.press("Enter")
+    await editor_locator.fill(text)
+    await expect(editor_locator).to_have_text(text, timeout=transition_timeout)
+
+async def click_wiki_menu_save(page, menu_list, transition_timeout=60000):
+    for menu in menu_list:
+        locator_by_id = page.locator(f'#{menu}')
+        if await locator_by_id.count() > 0:
+            await locator_by_id.click()
+            continue
+
+        locator_by_text = page.locator(f'#mMenuBar span:has-text("{menu}")')
+        if await locator_by_text.count() > 0:
+            await locator_by_text.click()
+            if menu == 'format_color_text':
+                await set_text_color(page.locator('.m-menu-color-input'), 255, 0, 0)  # R=255, G=0, B=0
+            if menu == 'table':
+                await fill_all_cells(page)
+            continue
+
+        raise ValueError(f"Menu item '{menu}' not found in wiki menu bar.")
+
+    await page.locator('//input[@type="submit" and @value="保存"]').click()
+    await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+
+async def set_text_color(color_input, r, g, b):
+    r = max(0, min(255, r))
+    g = max(0, min(255, g))
+    b = max(0, min(255, b))
+    
+    # Convert RGB to HEX
+    hex_color = f"#{r:02x}{g:02x}{b:02x}"
+    # Fill value to input color
+    await color_input.fill(hex_color)
+
+async def fill_all_cells(page):
+    rows = await page.locator("table tbody tr").count()
+    for row_idx in range(rows):
+        row = page.locator("table tbody tr").nth(row_idx)
+        cells_count = await row.locator("th, td").count()
+        
+        for col_idx in range(cells_count):
+            text = f"row{row_idx}col{col_idx}"
+            cell = row.locator("th, td").nth(col_idx)
+
+            await cell.evaluate("""
+                (cell, text) => {
+                    let p = cell.querySelector('p');
+                    if (!p) {
+                        p = document.createElement('p');
+                        cell.appendChild(p);
+                    }
+                    p.innerHTML = text;
+                }
+            """, text)
+
+async def click_table_menu_save(page, row_index, col_index, table_menu, transition_timeout=60000):
+    table = page.locator('#mEditor .ProseMirror .tableWrapper table').first
+    first_cell = table.locator("tr").first.locator("th, td").first
+    await first_cell.click(force=True)
+    if table_menu == 'セルを削除':
+        last_cell = table.locator("tr").first.locator("th, td").last
+        await last_cell.click(modifiers=["Shift"])
+    for _ in range(row_index):
+        await page.keyboard.press("ArrowDown")
+    for _ in range(col_index):
+        if table_menu == 'セルを削除':
+            await page.keyboard.press("Shift+ArrowRight")
+        else:
+            await page.keyboard.press("ArrowRight")
+
+    await page.locator("#arrowDropDown").click()
+    await page.locator(f'.table-dropdown-item:has-text("{table_menu}")').click()
+    await page.locator('//input[@type="submit" and @value="保存"]').click()
+
+    view_locator = page.locator('#mView .ProseMirror[contenteditable="false"]')
+    await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+
+async def click_and_expect_alert(page, action, expected_message, transition_timeout=60000):
+    async with page.expect_event("dialog", timeout=transition_timeout*5) as dialog_info:
+        await action()
+    dialog = await dialog_info.value
+    print(dialog.message)
+    print(expected_message)
+    assert dialog.message == expected_message
+    await dialog.accept()
+    await expect(page.locator('//*[contains(@class, "title-text")]//*[text() = "プロジェクトのWiki"]')).to_be_visible(timeout=transition_timeout)
+
+
+async def go_to_file_detail(page, filename_move, work_dir):
+    transition_timeout = 60000
+    await get_select_file_title_locator(page, filename_move).click(timeout=transition_timeout)
+    await expect(page.get_by_text(re.compile(r"^タイムスタンプ検証中"))).not_to_be_visible(timeout=transition_timeout * 5)
+    time.sleep(2)
+
+    # タイムスタンプエラーが発生した場合は、画面の証跡を記録した上で、「タイムスタンプを打つ」を押して、タイムスタンプエラーが解消するか確認すること
+    locator_timestamperror = page.get_by_text(re.compile(r"^タイムスタンプの検証"))
+    if await locator_timestamperror.is_visible():
+        print('timestamp error')
+        await page.locator(f'//a[contains(text(), "タイムスタンプを打つ")]').click(timeout=transition_timeout * 5)
+        await expect(page.get_by_text(re.compile(r"^タイムスタンプ検証中"))).not_to_be_visible(timeout=transition_timeout * 5)
+        await expect(page.get_by_text(re.compile(r"^タイムスタンプの検証"))).not_to_be_visible(timeout=transition_timeout * 5)
+
+    # 200 KiB より大きいファイルは詳細情報の表示はできない
+    filepath = os.path.join(work_dir, filename_move)
+    filesize = os.path.getsize(filepath)
+    large_filesize = 204800 # (200 * 1024)
+    if filesize > large_filesize:
+        print('file size > 200kB')
+        text = 'Text files larger than 200 KiB are not rendered. Please download the file to view.'
+        frame = page.frame_locator("iframe[src*='/render']")
+        alert_locator = frame.locator('//div[contains(@class, "alert-warning")]')
+        await alert_locator.wait_for(state="visible", timeout=transition_timeout * 5)
+        await expect(alert_locator).to_have_text(text, timeout=transition_timeout * 5)
+
+async def back_to_file_list_screen(page, provider, target_file_view):
+    transition_timeout = 60000
+    if target_file_view != 'file-tab':
+        await page.locator("a.project-title").click()
+    else:
+        await page.locator('#projectNavFiles a').click()
+    time.sleep(1)
+    await expect(page.locator('//a[text() = "アドオン"]')).to_be_visible(timeout=transition_timeout)
+    await expect(get_select_expanded_storage_title_locator(page, provider)).to_be_visible(timeout=transition_timeout)
+
+async def move_file_to_storage(page, provider, filename_move):
+    transition_timeout = 60000
+    await expect(get_select_file_title_locator(page, filename_move)).to_be_visible(timeout=transition_timeout * 2)
+    await get_select_file_extension_locator(page, filename_move).click()
+    source = get_select_file_draggable_locator(page, filename_move)
+    dest = get_select_storage_title_locator(page, provider)
+
+    await drag_and_drop(page, source, dest)
+    await expect(page.get_by_text(re.compile(r"^移動中"))).not_to_be_visible(timeout=transition_timeout * 5)
+    time.sleep(10)
+    await page.reload()
+    
+    await expect(get_select_file_title_locator(page, filename_move)).to_be_visible(timeout=transition_timeout * 5)

@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
-Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst]
+Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki]
 USAGE
   exit 1
 fi
@@ -17,6 +17,7 @@ WEKO=false
 FLOWABLE=false
 S3COMPATSIGV4=false
 S3COMPATSIGV4_INST=false
+WIKI=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -37,6 +38,9 @@ for arg in "$@"; do
       ;;
     --s3compatsigv4-inst)
       S3COMPATSIGV4_INST=true
+      ;;
+    --wiki)
+      WIKI=true
       ;;
     *)
       echo "Unknown argument: ${arg}" >&2
@@ -192,6 +196,18 @@ s3compatsigv4_inst_endpoint_url: '${S3COMPATSIGV4_INST_ENDPOINT}'
 s3compatsigv4_inst_access_key: '${S3COMPATSIGV4_INST_ACCESS_KEY}'
 s3compatsigv4_inst_secret_key: '${S3COMPATSIGV4_INST_SECRET_KEY}'
 s3compatsigv4_inst_bucket: '${S3COMPATSIGV4_INST_BUCKET}'
+EOF
+fi
+
+if [[ "${WIKI}" == "true" ]]; then
+  cat >> "${OUTPUT}" <<'EOF'
+
+wiki_enabled: true
+EOF
+else
+  cat >> "${OUTPUT}" <<'EOF'
+
+wiki_enabled: false
 EOF
 fi
 

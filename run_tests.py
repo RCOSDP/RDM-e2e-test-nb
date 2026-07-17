@@ -72,6 +72,8 @@ class TestRunner:
         # Workflow specific parameters
         self.workflow_enabled = False
         self.gateway_base_url = None
+        # Wiki specific parameters
+        self.wiki_enabled = False
         # Workflow admin user parameters
         self.idp_name_integrated_admin = None
         self.idp_username_integrated_admin = None
@@ -579,6 +581,22 @@ class TestRunner:
                 exclude_notebooks=self.exclude_notebooks,
             )
         )
+        
+    def run_wiki_tests(self):
+        """Run wiki tests."""
+        print('\n=== Wiki Tests ===')
+        if not self.wiki_enabled:
+            print('Skipping Wiki tests (wiki_enabled=false)')
+            return
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                '取りまとめ-Wiki操作.ipynb',
+                skip_failed_test=self.skip_failed_test,
+                exclude_notebooks=self.exclude_notebooks,
+            )
+        )
+            
 
     def check_notebook_errors(self, notebook_path):
         """Check a notebook and all its sub-notebooks recursively for execution errors."""
@@ -683,7 +701,8 @@ class TestRunner:
         self.run_weko_tests()
         self.run_mibyo_db_tests()
         self.run_workflow_tests()
-        
+        self.run_wiki_tests()
+
         result_notebooks = [result_notebook for result_notebook in self.result_notebooks if result_notebook is not None]
         
         print(f'\nTest run completed at {datetime.now()}')
