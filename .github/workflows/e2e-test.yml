@@ -67,6 +67,30 @@ on:
         description: 'RDMFS Docker image (default: gcr.io/nii-ap-ops/rdmfs:2026.02.1)'
         required: false
         default: ''
+      enable_wiki:
+        description: 'Enable Wiki feature build (builds wiki webpack bundle and OSF image with wiki JS)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      wiki_repository:
+        description: 'RDM-wiki-frontend repository (default: RCOSDP/RDM-wiki-frontend)'
+        required: false
+        default: ''
+      wiki_branch:
+        description: 'RDM-wiki-frontend branch (default: develop)'
+        required: false
+        default: ''
+      y_websocket_repository:
+        description: 'RDM-y-websocket repository (default: RCOSDP/RDM-y-websocket)'
+        required: false
+        default: ''
+      y_websocket_branch:
+        description: 'RDM-y-websocket branch (default: master)'
+        required: false
+        default: ''
       test_config:
         description: 'Test configuration file to use'
         required: false
@@ -93,10 +117,26 @@ jobs:
             include_admin: false
             skip_admin: true
             skip_metadata: false
+            skip_autofill: true
             minio_enabled: false
             weko_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
+            wiki_enabled: false
+          - name: user-metadata
+            display_name: "User Tests (Metadata)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: false
+            skip_autofill: false
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
           - name: admin
             display_name: "Admin Tests"
             include_admin: true
@@ -108,6 +148,7 @@ jobs:
             weko_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
+            wiki_enabled: false
             exclude_notebooks: |
               テスト手順-管理者機能-ログイン可否設定.ipynb
               テスト手順-管理者機能-ノード管理.ipynb
@@ -149,11 +190,39 @@ jobs:
             weko_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
+            wiki_enabled: false
+          - name: migration-from-20250906-weko
+            display_name: "Migration Test from 20250906 (WEKO)"
+            include_admin: true
+            migration_from:
+              repository: "RCOSDP/RDM-osf.io"
+              commit: "4c007f2"
+              osf_image: "niicloudoperation/rdm-osf.io:20250906"
+              ember_image: "niicloudoperation/rdm-ember-osf-web:20250906"
+              cas_image: "niicloudoperation/rdm-cas-overlay:20250906"
+              mfr_image: "niicloudoperation/rdm-modular-file-renderer:20250906"
+              wb_image: "niicloudoperation/rdm-waterbutler:20250906"
+              initial_data_notebook: "取りまとめ-Migration前-20250906.ipynb"
+              post_migration_notebook: "取りまとめ-Migration後-20250906-weko.ipynb"
+            exclude_notebooks: |
+              テスト手順-WEKOアドオン-メタデータ送信-書誌情報.ipynb
+              テスト手順-WEKOアドオン-メタデータ送信-書誌情報＋根拠データ.ipynb
+            minio_enabled: false
+            weko_enabled: true
+            weko_test_mode: direct
+            skip_login: true
+            skip_default_storage: true
+            skip_metadata: true
+            skip_admin: true
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
           - name: user-minio
             display_name: "User Tests (MinIO)"
             include_admin: false
             skip_admin: true
             skip_metadata: false
+            skip_autofill: true
             skip_default_storage: true
             skip_login: true
             skip_130mb_upload: true
@@ -162,6 +231,7 @@ jobs:
             weko_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
+            wiki_enabled: false
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -175,8 +245,9 @@ jobs:
             weko_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
-          - name: user-weko
-            display_name: "User Tests (WEKO)"
+            wiki_enabled: false
+          - name: user-weko-direct
+            display_name: "User Tests (WEKO Direct)"
             include_admin: true
             skip_admin: true
             skip_metadata: true
@@ -185,8 +256,24 @@ jobs:
             skip_130mb_upload: true
             minio_enabled: false
             weko_enabled: true
+            weko_test_mode: direct
             jupyterhub_enabled: false
             flowable_enabled: false
+            wiki_enabled: false
+          - name: user-weko-workflow
+            display_name: "User Tests (WEKO Workflow)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: true
+            weko_test_mode: workflow
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
           - name: user-jupyterhub
             display_name: "User Tests (JupyterHub)"
             include_admin: false
@@ -199,8 +286,9 @@ jobs:
             weko_enabled: false
             jupyterhub_enabled: true
             flowable_enabled: false
-          - name: user-workflow
-            display_name: "User Tests (Flowable)"
+            wiki_enabled: false
+          - name: user-workflow-roles
+            display_name: "User Tests (Flowable Roles)"
             include_admin: true
             skip_admin: true
             skip_metadata: true
@@ -211,7 +299,50 @@ jobs:
             weko_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: true
+            workflow_test_mode: roles
+            wiki_enabled: false
+          - name: user-workflow-forms
+            display_name: "User Tests (Flowable Forms)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: true
+            workflow_test_mode: forms
+            wiki_enabled: false
+          - name: user-workflow-batch
+            display_name: "User Tests (Flowable Batch)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: true
+            workflow_test_mode: batch
             workflow_batch_project_count: 50
+            wiki_enabled: false
+          - name: user-wiki
+            display_name: "User Tests (Wiki)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: true
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
@@ -220,6 +351,7 @@ jobs:
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
       JUPYTERHUB_ENABLED: ${{ matrix.test-group.jupyterhub_enabled == true && 'true' || 'false' }}
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
+      WIKI_ENABLED: ${{ (matrix.test-group.wiki_enabled == true || github.event.inputs.enable_wiki == 'true') && 'true' || 'false' }}
       MINIO_ROOT_USER: e2eadmin
       MINIO_ROOT_PASSWORD: e2epassword123
       MINIO_ALIAS: ci-minio
@@ -536,7 +668,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
 
         # Create test data that will be migrated
-        docker-compose exec -T web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
 
         echo "Migration source test data created"
 
@@ -615,9 +747,31 @@ jobs:
         EOF
           echo "WB_CUSTOM_REPO=$(grep -oP '^-\s*WB_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_ENV
           echo "WB_CUSTOM_BRANCH=$(grep -oP '^-\s*WB_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_ENV
+
+          # Wiki parameters from PR body
+          WIKI_ENABLED_OVERRIDE=$(grep -oP '^-\s*WIKI_ENABLED:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' | tr '[:upper:]' '[:lower:]' || true)
+          WIKI_REPO_OVERRIDE=$(grep -oP '^-\s*WIKI_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          WIKI_BRANCH_OVERRIDE=$(grep -oP '^-\s*WIKI_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          echo "WIKI_CUSTOM_REPO=${WIKI_REPO_OVERRIDE}" >> $GITHUB_ENV
+          echo "WIKI_CUSTOM_BRANCH=${WIKI_BRANCH_OVERRIDE}" >> $GITHUB_ENV
+          if [[ "$WIKI_ENABLED_OVERRIDE" == "true" ]]; then
+            echo "WIKI_ENABLED=true" >> $GITHUB_ENV
+          fi
+
+          # y-websocket parameters from PR body
+          Y_WEBSOCKET_REPO_OVERRIDE=$(grep -oP '^-\s*Y_WEBSOCKET_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt \
+            | head -1 | tr -d ' \r' || true)
+          Y_WEBSOCKET_BRANCH_OVERRIDE=$(grep -oP '^-\s*Y_WEBSOCKET_BRANCH:\s*\K.*$' /tmp/pr_body.txt \
+            | head -1 | tr -d ' \r' || true)
+          echo "Y_WEBSOCKET_CUSTOM_REPO=${Y_WEBSOCKET_REPO_OVERRIDE}" >> $GITHUB_ENV
+          echo "Y_WEBSOCKET_CUSTOM_BRANCH=${Y_WEBSOCKET_BRANCH_OVERRIDE}" >> $GITHUB_ENV
         else
           echo "WB_CUSTOM_REPO=${{ github.event.inputs.wb_repository }}" >> $GITHUB_ENV
           echo "WB_CUSTOM_BRANCH=${{ github.event.inputs.wb_branch }}" >> $GITHUB_ENV
+          echo "WIKI_CUSTOM_REPO=${{ github.event.inputs.wiki_repository }}" >> $GITHUB_ENV
+          echo "WIKI_CUSTOM_BRANCH=${{ github.event.inputs.wiki_branch }}" >> $GITHUB_ENV
+          echo "Y_WEBSOCKET_CUSTOM_REPO=${{ github.event.inputs.y_websocket_repository }}" >> $GITHUB_ENV
+          echo "Y_WEBSOCKET_CUSTOM_BRANCH=${{ github.event.inputs.y_websocket_branch }}" >> $GITHUB_ENV
         fi
 
     - name: Build custom WaterButler image
@@ -646,6 +800,87 @@ jobs:
         # Override WB_IMAGE for subsequent steps
         echo "WB_IMAGE=rdm-waterbutler:custom" >> $GITHUB_ENV
         echo "Custom WaterButler image built successfully"
+
+    - name: Build Wiki bundle and OSF image
+      if: env.WIKI_ENABLED == 'true'
+      run: |
+        WIKI_REPO="${WIKI_CUSTOM_REPO:-RCOSDP/RDM-wiki-frontend}"
+        WIKI_BRANCH="${WIKI_CUSTOM_BRANCH:-develop}"
+        BUILD_TAG="${{ github.run_number }}"
+
+        echo "=== Building Wiki bundle from ${WIKI_REPO}@${WIKI_BRANCH} ==="
+
+        # Stage 1: Clone RDM-wiki-frontend (wiki-webpack)
+        git clone --depth=50 -b "${WIKI_BRANCH}" \
+          "https://github.com/${WIKI_REPO}.git" RDM-wiki-frontend
+
+        # Stage 2: Prepare wiki-osf (copy of RDM-osf.io + wiki-frontend merged)
+        cp -r RDM-osf.io wiki-osf
+        cp -r RDM-wiki-frontend/. wiki-osf/
+
+        # Build wiki bundle docker image (webpack runs inside container)
+        echo "Building wiki bundle image..."
+        docker build --pull -t "rdm/wiki:${BUILD_TAG}" wiki-osf/
+
+        # Extract webpack bundle from container
+        mkdir -p wikitemp
+        CONTAINER_ID=$(docker create --name "wiki-extract-${BUILD_TAG}" "rdm/wiki:${BUILD_TAG}" bash)
+        docker cp "${CONTAINER_ID}:/code/website/static/public/js/" wikitemp/
+        docker rm "${CONTAINER_ID}" || true
+        docker rmi "rdm/wiki:${BUILD_TAG}" || true
+
+        # Cleanup intermediate dirs to save disk space
+        rm -rf wiki-osf RDM-wiki-frontend
+
+        # Stage 3: Copy wiki-edit-page bundle into RDM-osf.io
+        JS_FILE=$(ls -rt wikitemp/js/wiki-edit-page.*.js 2>/dev/null | tail -n 1)
+        MAP_FILE=$(ls -rt wikitemp/js/wiki-edit-page.*.js.map 2>/dev/null | tail -n 1 || true)
+
+        if [ -z "${JS_FILE}" ]; then
+          echo "ERROR: wiki-edit-page.js not found in wiki container output"
+          ls -la wikitemp/js/ || true
+          exit 1
+        fi
+
+        echo "Copying wiki bundle: ${JS_FILE}"
+        cp "${JS_FILE}" RDM-osf.io/website/static/js/pages/wiki-edit-page.js
+        if [ -n "${MAP_FILE}" ]; then
+          cp "${MAP_FILE}" RDM-osf.io/website/static/js/pages/
+        fi
+        rm -rf wikitemp
+
+        # Build final OSF image with wiki bundle included
+        echo "Building OSF image with wiki bundle..."
+        OSF_WIKI_TAG="rdm-osf-wiki:${BUILD_TAG}"
+        docker build -t "${OSF_WIKI_TAG}" RDM-osf.io/
+
+        echo "OSF_IMAGE=${OSF_WIKI_TAG}" >> $GITHUB_ENV
+        echo "=== Wiki build complete. OSF_IMAGE set to: ${OSF_WIKI_TAG} ==="
+
+    - name: Build and start y-websocket
+      if: env.WIKI_ENABLED == 'true'
+      run: |
+        Y_WS_REPO="${Y_WEBSOCKET_CUSTOM_REPO:-RCOSDP/RDM-y-websocket}"
+        Y_WS_BRANCH="${Y_WEBSOCKET_CUSTOM_BRANCH:-master}"
+        git clone --depth=50 -b "${Y_WS_BRANCH}" "https://github.com/${Y_WS_REPO}.git" RDM-y-websocket
+        docker build --pull -t rdm/y-websocket:local RDM-y-websocket
+        docker compose -f e2e-tests/docker/y-websocket/docker-compose.yml up -d
+        # Wait for y-websocket to become ready
+        echo "Waiting for y-websocket to be ready..."
+        for i in $(seq 1 30); do
+          if nc -z localhost 1234 2>/dev/null; then
+            echo "y-websocket is ready after ${i}s"
+            break
+          fi
+          if [ "$i" -eq 30 ]; then
+            echo "ERROR: y-websocket did not become ready in time"
+            docker compose -f e2e-tests/docker/y-websocket/docker-compose.yml logs
+            exit 1
+          fi
+          sleep 1
+        done
+        echo "Y_WEBSOCKET_URL=ws://localhost:1234" >> $GITHUB_ENV
+        echo "y-websocket started at ws://localhost:1234"
 
     - name: Create docker-compose override for NII Cloud Operation images
       working-directory: RDM-osf.io
@@ -678,8 +913,12 @@ jobs:
           echo "TLJH_RDMFS_IMAGE_OVERRIDE=$TLJH_RDMFS_IMAGE_OVERRIDE" >> $GITHUB_ENV
 
           # Use overrides if found, otherwise defaults
-          # If WB_IMAGE was set by "Build custom WaterButler image" step, use it
-          export OSF_IMAGE="${OSF_OVERRIDE:-niicloudoperation/rdm-osf.io:latest}"
+          # If WIKI_ENABLED, OSF_IMAGE was already set to the wiki-built image; preserve it
+          if [[ "${WIKI_ENABLED}" == "true" && -n "${OSF_IMAGE}" ]]; then
+            export OSF_IMAGE
+          else
+            export OSF_IMAGE="${OSF_OVERRIDE:-niicloudoperation/rdm-osf.io:latest}"
+          fi
           export EMBER_IMAGE="${EMBER_OVERRIDE:-niicloudoperation/rdm-ember-osf-web:latest}"
           export CAS_IMAGE="${CAS_OVERRIDE:-niicloudoperation/rdm-cas-overlay:latest}"
           export MFR_IMAGE="${MFR_OVERRIDE:-niicloudoperation/rdm-modular-file-renderer:latest}"
@@ -690,7 +929,12 @@ jobs:
           fi
         else
           # Use workflow dispatch inputs or defaults
-          export OSF_IMAGE="${{ github.event.inputs.osf_image || 'niicloudoperation/rdm-osf.io:latest' }}"
+          # If WIKI_ENABLED, OSF_IMAGE was already set to the wiki-built image; preserve it
+          if [[ "${WIKI_ENABLED}" == "true" && -n "${OSF_IMAGE}" ]]; then
+            export OSF_IMAGE
+          else
+            export OSF_IMAGE="${{ github.event.inputs.osf_image || 'niicloudoperation/rdm-osf.io:latest' }}"
+          fi
           export EMBER_IMAGE="${{ github.event.inputs.ember_image || 'niicloudoperation/rdm-ember-osf-web:latest' }}"
           export CAS_IMAGE="${{ github.event.inputs.cas_image || 'niicloudoperation/rdm-cas-overlay:latest' }}"
           export MFR_IMAGE="${{ github.event.inputs.mfr_image || 'niicloudoperation/rdm-modular-file-renderer:latest' }}"
@@ -905,6 +1149,7 @@ jobs:
         echo "WEKO_INSTITUTION_NAME=Virginia Tech [Test]" >> $GITHUB_ENV
         echo "WEKO_INDEX_NAME=Sample Index" >> $GITHUB_ENV
         echo "WEKO_DOCKER_COMPOSE_PATH=${{ github.workspace }}/weko/docker-compose2.yml" >> $GITHUB_ENV
+        echo "WEKO_TEST_MODE=${{ matrix.test-group.weko_test_mode || 'direct' }}" >> $GITHUB_ENV
         echo "IGNORE_HTTPS_ERRORS=true" >> $GITHUB_ENV
 
     - name: Verify RDM containers can connect to WEKO via HTTPS
@@ -931,6 +1176,7 @@ jobs:
       run: |
         echo "GATEWAY_BASE_URL=http://192.168.168.167:8088/" >> $GITHUB_ENV
         echo "WORKFLOW_BATCH_PROJECT_COUNT=${{ matrix.test-group.workflow_batch_project_count || 50 }}" >> $GITHUB_ENV
+        echo "WORKFLOW_TEST_MODE=${{ matrix.test-group.workflow_test_mode }}" >> $GITHUB_ENV
 
     - name: Install TLJH stack
       if: env.JUPYTERHUB_ENABLED == 'true'
@@ -958,21 +1204,33 @@ jobs:
         
         # Create result directory (parent already exists from checkout)
         mkdir -p ../result
-        
+
+        # Build a typed parameter file via generate_ci_config.sh (single source of
+        # type resolution, e.g. ignore_https_errors -> bool) instead of -p strings.
+        cat > /tmp/post_base.config.yaml <<'EOF'
+        rdm_url: 'http://192.168.168.167:5000/'
+        admin_rdm_url: 'http://192.168.168.167:8001/'
+        idp_name_1: 'FakeCAS'
+        idp_username_1: 'testuser1@example.com'
+        idp_password_1: 'testpass123'
+        idp_name_2: 'FakeCAS'
+        idp_username_2: 'testuser2@example.com'
+        idp_password_2: 'testpass456'
+        transition_timeout: 60000
+        EOF
+
+        CONFIG_ARGS=(/tmp/post.config.yaml /tmp/post_base.config.yaml)
+        if [ "${WEKO_ENABLED}" = "true" ]; then
+          CONFIG_ARGS+=(--weko)
+        fi
+        ../.github/scripts/generate_ci_config.sh "${CONFIG_ARGS[@]}"
+
         # Execute the post-migration test notebook
         papermill ${{ matrix.test-group.migration_from.post_migration_notebook }} \
           ../result/${{ matrix.test-group.migration_from.post_migration_notebook }} \
-          -p rdm_url "http://192.168.168.167:5000/" \
-          -p admin_rdm_url "http://192.168.168.167:8001/" \
-          -p idp_name_1 "FakeCAS" \
-          -p idp_username_1 "testuser1@example.com" \
-          -p idp_password_1 "testpass123" \
-          -p idp_name_2 "FakeCAS" \
-          -p idp_username_2 "testuser2@example.com" \
-          -p idp_password_2 "testpass456" \
-          -p default_result_path "../result" \
-          -p transition_timeout 60000
-        
+          -f /tmp/post.config.yaml \
+          -p default_result_path "../result"
+
         echo "Post-migration tests completed"
 
     - name: Create test users and projects
@@ -985,7 +1243,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
         
         # Execute the script and capture project IDs
-        docker-compose exec -T web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
         
         # Extract project IDs and names from output
         PROJECT_ID_1=$(grep "PROJECT_ID_testuser1@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
@@ -1078,8 +1336,9 @@ jobs:
         skip_admin: ${{ matrix.test-group.skip_admin }}
         skip_login: ${{ matrix.test-group.skip_login || false }}
         weko_enabled: ${{ matrix.test-group.weko_enabled == true }}
+        weko_test_mode: ${{ matrix.test-group.weko_test_mode || 'direct' }}
         enable_1gb_file_upload: false
-        skip_erad_completion_test: false
+        skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
         storages_oauth: []
         EOF
 
@@ -1101,6 +1360,9 @@ jobs:
         fi
         if [ "${S3COMPATSIGV4_INST_ENABLED}" = "true" ]; then
           args+=(--s3compatsigv4-inst)
+        fi
+        if [ "${WIKI_ENABLED}" = "true" ]; then
+          args+=(--wiki)
         fi
 
         .github/scripts/generate_ci_config.sh "${args[@]}"
@@ -1268,6 +1530,20 @@ jobs:
         path: e2e-tests/flowable-docker-logs.txt
         retention-days: 7
 
+    - name: Collect y-websocket logs
+      if: always() && env.WIKI_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        docker compose -f docker/y-websocket/docker-compose.yml logs > y-websocket-logs.txt 2>&1 || true
+
+    - name: Upload y-websocket logs
+      if: always() && env.WIKI_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: y-websocket-logs-${{ matrix.test-group.name }}
+        path: e2e-tests/y-websocket-logs.txt
+        if-no-files-found: ignore
+
     - name: Stop WEKO stack
       if: always() && env.WEKO_ENABLED == 'true'
       working-directory: e2e-tests
@@ -1285,6 +1561,12 @@ jobs:
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_flowable.sh down ../RDM-flowable-gateway
+
+    - name: Stop y-websocket
+      if: always() && env.WIKI_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        docker compose -f docker/y-websocket/docker-compose.yml down -v || true
 
     - name: Cleanup and save logs
       if: always()
