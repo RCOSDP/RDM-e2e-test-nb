@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
-Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst]
+Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki]
 USAGE
   exit 1
 fi
@@ -17,6 +17,7 @@ WEKO=false
 FLOWABLE=false
 S3COMPATSIGV4=false
 S3COMPATSIGV4_INST=false
+WIKI=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -37,6 +38,9 @@ for arg in "$@"; do
       ;;
     --s3compatsigv4-inst)
       S3COMPATSIGV4_INST=true
+      ;;
+    --wiki)
+      WIKI=true
       ;;
     *)
       echo "Unknown argument: ${arg}" >&2
@@ -111,6 +115,7 @@ if [[ "${WEKO}" == "true" ]]; then
   WEKO_INDEX_NAME_VALUE=${WEKO_INDEX_NAME:-'Sample Index'}
   WEKO_DOCKER_COMPOSE_PATH_VALUE=${WEKO_DOCKER_COMPOSE_PATH:-}
   SWORD_MAPPING_ID_VALUE=${SWORD_MAPPING_ID:-30002}
+  WEKO_TEST_MODE_VALUE=${WEKO_TEST_MODE:-direct}
   IGNORE_HTTPS_ERRORS_VALUE=${IGNORE_HTTPS_ERRORS:-false}
 
   cat >> "${OUTPUT}" <<EOF
@@ -125,6 +130,7 @@ weko_institution_name: '${WEKO_INSTITUTION_NAME_VALUE}'
 weko_index_name: '${WEKO_INDEX_NAME_VALUE}'
 weko_docker_compose_path: '${WEKO_DOCKER_COMPOSE_PATH_VALUE}'
 sword_mapping_id: ${SWORD_MAPPING_ID_VALUE}
+weko_test_mode: '${WEKO_TEST_MODE_VALUE}'
 ignore_https_errors: ${IGNORE_HTTPS_ERRORS_VALUE}
 EOF
 fi
@@ -132,6 +138,10 @@ fi
 if [[ "${FLOWABLE}" == "true" ]]; then
   GATEWAY_BASE_URL_VALUE=${GATEWAY_BASE_URL:-http://192.168.168.167:8088/}
   WORKFLOW_BATCH_PROJECT_COUNT_VALUE=${WORKFLOW_BATCH_PROJECT_COUNT:-50}
+  if [[ -z "${WORKFLOW_TEST_MODE:-}" ]]; then
+    echo "Error: WORKFLOW_TEST_MODE must be set when --flowable is enabled (one of: roles, forms, batch)" >&2
+    exit 1
+  fi
 
   cat >> "${OUTPUT}" <<EOF
 
@@ -139,6 +149,7 @@ if [[ "${FLOWABLE}" == "true" ]]; then
 workflow_enabled: true
 gateway_base_url: '${GATEWAY_BASE_URL_VALUE}'
 workflow_batch_project_count: ${WORKFLOW_BATCH_PROJECT_COUNT_VALUE}
+workflow_test_mode: '${WORKFLOW_TEST_MODE}'
 EOF
 else
   cat >> "${OUTPUT}" <<'EOF'
@@ -185,6 +196,18 @@ s3compatsigv4_inst_endpoint_url: '${S3COMPATSIGV4_INST_ENDPOINT}'
 s3compatsigv4_inst_access_key: '${S3COMPATSIGV4_INST_ACCESS_KEY}'
 s3compatsigv4_inst_secret_key: '${S3COMPATSIGV4_INST_SECRET_KEY}'
 s3compatsigv4_inst_bucket: '${S3COMPATSIGV4_INST_BUCKET}'
+EOF
+fi
+
+if [[ "${WIKI}" == "true" ]]; then
+  cat >> "${OUTPUT}" <<'EOF'
+
+wiki_enabled: true
+EOF
+else
+  cat >> "${OUTPUT}" <<'EOF'
+
+wiki_enabled: false
 EOF
 fi
 
