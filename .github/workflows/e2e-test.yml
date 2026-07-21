@@ -120,6 +120,7 @@ jobs:
             skip_autofill: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -134,6 +135,7 @@ jobs:
             skip_130mb_upload: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -146,6 +148,7 @@ jobs:
             skip_login: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -188,6 +191,7 @@ jobs:
               テスト手順-管理者機能-NIIストレージのクォータ.ipynb
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -209,6 +213,7 @@ jobs:
               テスト手順-WEKOアドオン-メタデータ送信-書誌情報＋根拠データ.ipynb
             minio_enabled: false
             weko_enabled: true
+            mibyo_db_enabled: false
             weko_test_mode: direct
             skip_login: true
             skip_default_storage: true
@@ -229,6 +234,7 @@ jobs:
             minio_enabled: true
             s3compatsigv4_enabled: true
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -243,6 +249,7 @@ jobs:
             minio_enabled: true
             s3compatsigv4_institutional_storage: true
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -257,6 +264,7 @@ jobs:
             minio_enabled: false
             weko_enabled: true
             weko_test_mode: direct
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -271,6 +279,7 @@ jobs:
             minio_enabled: false
             weko_enabled: true
             weko_test_mode: workflow
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
@@ -284,6 +293,7 @@ jobs:
             skip_130mb_upload: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: true
             flowable_enabled: false
             wiki_enabled: false
@@ -297,6 +307,7 @@ jobs:
             skip_130mb_upload: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: true
             workflow_test_mode: roles
@@ -311,6 +322,7 @@ jobs:
             skip_130mb_upload: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: true
             workflow_test_mode: forms
@@ -325,6 +337,7 @@ jobs:
             skip_130mb_upload: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: true
             workflow_test_mode: batch
@@ -340,9 +353,25 @@ jobs:
             skip_130mb_upload: true
             minio_enabled: false
             weko_enabled: false
+            mibyo_db_enabled: false
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: true
+          - name: user-metadata-mibyo-db
+            display_name: "User Tests (Mibyo DB)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            mibyo_db_enabled: true
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
@@ -351,6 +380,7 @@ jobs:
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
       JUPYTERHUB_ENABLED: ${{ matrix.test-group.jupyterhub_enabled == true && 'true' || 'false' }}
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
+      MIBYO_DB_ENABLED: ${{ matrix.test-group.mibyo_db_enabled == true && 'true' || 'false' }}
       WIKI_ENABLED: ${{ (matrix.test-group.wiki_enabled == true || github.event.inputs.enable_wiki == 'true') && 'true' || 'false' }}
       MINIO_ROOT_USER: e2eadmin
       MINIO_ROOT_PASSWORD: e2epassword123
@@ -461,7 +491,7 @@ jobs:
         fetch-depth: 0
 
     - name: Checkout WEKO repository
-      if: env.WEKO_ENABLED == 'true'
+      if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       uses: actions/checkout@v4
       with:
         repository: RCOSDP/weko
@@ -476,7 +506,7 @@ jobs:
         path: RDM-flowable-gateway
 
     - name: Prepare WEKO compose
-      if: env.WEKO_ENABLED == 'true'
+      if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_weko.sh prepare ../weko
@@ -1133,13 +1163,13 @@ jobs:
         test_rdm_endpoints
 
     - name: Install WEKO stack
-      if: env.WEKO_ENABLED == 'true'
+      if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_weko.sh install ../weko
 
     - name: Configure WEKO connection info
-      if: env.WEKO_ENABLED == 'true'
+      if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       run: |
         echo "WEKO_URL=https://192.168.168.167" >> $GITHUB_ENV
         echo "WEKO_ADMIN_EMAIL=wekosoftware@nii.ac.jp" >> $GITHUB_ENV  # gitleaks:allow
@@ -1153,7 +1183,7 @@ jobs:
         echo "IGNORE_HTTPS_ERRORS=true" >> $GITHUB_ENV
 
     - name: Verify RDM containers can connect to WEKO via HTTPS
-      if: env.WEKO_ENABLED == 'true'
+      if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       working-directory: RDM-osf.io
       run: |
         set -xeu
@@ -1337,6 +1367,7 @@ jobs:
         skip_login: ${{ matrix.test-group.skip_login || false }}
         weko_enabled: ${{ matrix.test-group.weko_enabled == true }}
         weko_test_mode: ${{ matrix.test-group.weko_test_mode || 'direct' }}
+        mibyo_db_enabled: ${{ matrix.test-group.mibyo_db_enabled == true }}
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
         storages_oauth: []
@@ -1349,7 +1380,7 @@ jobs:
         if [ "${JUPYTERHUB_ENABLED}" = "true" ]; then
           args+=(--jupyterhub)
         fi
-        if [ "${WEKO_ENABLED}" = "true" ]; then
+        if [ "${WEKO_ENABLED}" = "true" ] || [ "${MIBYO_DB_ENABLED}" = "true" ]; then
           args+=(--weko)
         fi
         if [ "${FLOWABLE_ENABLED}" = "true" ]; then
@@ -1490,13 +1521,13 @@ jobs:
         if-no-files-found: ignore
 
     - name: Collect WEKO logs
-      if: always() && env.WEKO_ENABLED == 'true'
+      if: always() && (env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true')
       working-directory: weko
       run: |
         docker compose -f docker-compose2.yml logs > ../e2e-tests/weko-docker-logs.txt 2>&1 || true
 
     - name: Upload WEKO logs
-      if: always() && env.WEKO_ENABLED == 'true'
+      if: always() && (env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true')
       uses: actions/upload-artifact@v4
       with:
         name: weko-logs-${{ matrix.test-group.name }}
@@ -1545,7 +1576,7 @@ jobs:
         if-no-files-found: ignore
 
     - name: Stop WEKO stack
-      if: always() && env.WEKO_ENABLED == 'true'
+      if: always() && (env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true')
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_weko.sh down ../weko
