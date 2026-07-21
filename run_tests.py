@@ -52,6 +52,7 @@ class TestRunner:
         self.tljh_username = None
         self.tljh_password = None
         self.weko_enabled = False
+        self.mibyo_db_enabled = False
         # WEKO / JAIRO Cloud specific parameters
         self.weko_url = None
         self.weko_admin_email = None
@@ -62,6 +63,7 @@ class TestRunner:
         self.weko_index_name = None
         self.weko_docker_compose_path = None
         self.sword_mapping_id = 30002
+        self.mibyo_db_sword_mapping_id = 51000
         self.weko_test_mode = 'direct'
         self.ignore_https_errors = False
         # S3CompatSigV4 specific parameters
@@ -488,6 +490,42 @@ class TestRunner:
             )
         )
 
+    def run_mibyo_db_tests(self):
+        """Run Mibyo DB tests."""
+        print('\n=== Mibyo DB Tests ===')
+        if not self.mibyo_db_enabled:
+            print('Skipping Mibyo DB tests (mibyo_db_enabled=false)')
+            return
+
+        missing_params = [
+            name for name in [
+                'weko_url', 'weko_admin_email', 'weko_admin_password',
+                'weko_index_name', 'weko_docker_compose_path'
+            ]
+            if not getattr(self, name, None)
+        ]
+        if missing_params:
+            print('Error: Missing Mibyo DB parameters: ' + ', '.join(missing_params))
+            sys.exit(1)
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                'テスト手順-Metadataアドオン-未病データベース.ipynb',
+                admin_rdm_url=self.admin_rdm_url,
+                myproject_url=self.rdm_url + 'myprojects/',
+                idp_name_institutional_admin=self.idp_name_institutional_admin,
+                idp_username_institutional_admin=self.idp_username_institutional_admin,
+                idp_password_institutional_admin=self.idp_password_institutional_admin,
+                weko_url=self.weko_url,
+                weko_admin_email=self.weko_admin_email,
+                weko_admin_password=self.weko_admin_password,
+                weko_index_name=self.weko_index_name,
+                weko_docker_compose_path=self.weko_docker_compose_path,
+                sword_mapping_id=self.mibyo_db_sword_mapping_id,
+                ignore_https_errors=self.ignore_https_errors,
+            )
+        )
+
     def run_workflow_tests(self):
         """Run Workflow addon tests."""
         print('\n=== Workflow Tests ===')
@@ -661,6 +699,7 @@ class TestRunner:
         self.run_admin_tests()
         self.run_jupyterhub_tests()
         self.run_weko_tests()
+        self.run_mibyo_db_tests()
         self.run_workflow_tests()
         self.run_wiki_tests()
 
