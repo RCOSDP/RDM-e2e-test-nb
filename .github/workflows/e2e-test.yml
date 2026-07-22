@@ -1341,7 +1341,16 @@ jobs:
         idp_username_other_institution: 'testuser3@example.com'
         idp_password_other_institution: 'testpass321'
         institution_name: 'Virginia Tech [Test]'
-        
+
+        # Dedicated user for project limit number tests (no pre-created project)
+        idp_name_project_limit_1: 'FakeCAS'
+        idp_username_project_limit_1: 'testuser4@example.com'
+        idp_password_project_limit_1: 'testpass654'
+        institution_name_project_limit_1: 'Massachusetts Institute of Technology [Test]'
+        idp_name_project_limit_2: 'FakeCAS'
+        idp_username_project_limit_2: 'testuser5@example.com'
+        idp_password_project_limit_2: 'testpass987'
+
         # Test project URLs (using created project IDs and names)
         rdm_project_url_1: 'http://192.168.168.167:5000/${{ env.PROJECT_ID_1 }}/'
         rdm_project_name_1: '${{ env.PROJECT_NAME_1 }}'
