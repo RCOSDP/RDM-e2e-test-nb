@@ -22,6 +22,14 @@ current_ignore_https_errors = False
 temp_dir = None
 console_messages = []
 
+
+async def _save_page_video(page, dest_video_path):
+    if page.video is None:
+        raise FileNotFoundError('Page video recording is not available')
+    await page.video.save_as(dest_video_path)
+    print(f'Video: {dest_video_path}')
+
+
 async def run_pw(f, last_path=default_last_path, screenshot=True, permissions=None, new_context=False, new_page=False):
     global current_browser
     global current_browser_type
@@ -106,13 +114,12 @@ async def close_latest_page(last_path=None):
         assert len(current_pages) > 0, current_pages
         current_contexts[-1] = (current_context, current_pages[:-1])
         return
-    video_path = await last_page.video.path()
     index = len(current_pages)
     dest_video_path = os.path.join(last_path or default_last_path, f'video-{index}.webm')
-    shutil.copyfile(video_path, dest_video_path)
+    await last_page.close()
+    await _save_page_video(last_page, dest_video_path)
     current_pages = current_pages[:-1]
     current_contexts[-1] = (current_context, current_pages)
-    await last_page.close()
     if len(current_pages) > 0:
         return
     current_contexts = current_contexts[:-1]
@@ -140,7 +147,7 @@ async def init_pw_context(close_on_fail=True, last_path=None, browser_type='chro
     console_messages = []
     return (current_session_id, temp_dir)
 
-async def finish_pw_context(screenshot=False, last_path=None, timeout=30):
+async def finish_pw_context(screenshot=False, last_path=None, timeout=60):
     global current_browser
     try:
         await asyncio.wait_for(
@@ -204,6 +211,7 @@ async def _finish_pw_context(screenshot=False, last_path=None):
     if current_contexts is None or len(current_contexts) == 0:
         return
     current_context, current_pages = current_contexts[-1]
+    current_contexts = current_contexts[:-1]
     os.makedirs(last_path or default_last_path, exist_ok=True)
     timeout_on_screenshot = False
     if screenshot and current_pages is not None and len(current_pages) > 0:
@@ -215,21 +223,25 @@ async def _finish_pw_context(screenshot=False, last_path=None):
             timeout_on_screenshot = True
     if timeout_on_screenshot:
         return
-    current_contexts = current_contexts[::-1]
+    pages = list(current_pages)
+    for page in pages:
+        if not page.is_closed():
+            await page.close()
     await current_context.close()
-    for i, current_page in enumerate(current_pages):
+    for i, current_page in enumerate(pages):
         index = i + 1
         try:
-            video_path = await current_page.video.path()
             dest_video_path = os.path.join(last_path or default_last_path, f'video-{index}.webm')
-            shutil.copyfile(video_path, dest_video_path)
-            print(f'Video: {dest_video_path}')
+            await _save_page_video(current_page, dest_video_path)
         except:
             print('スクリーンキャプチャ動画の取得に失敗しました。', file=sys.stderr)
             traceback.print_exc()
             timeout_on_screenshot = True
     if timeout_on_screenshot:
-        return   
+        return
+    if len(current_contexts) > 0:
+        await _finish_pw_context(screenshot=False, last_path=last_path)
+        return
     har_path = os.path.join(temp_dir, 'har.zip')
     dest_har_path = os.path.join(last_path or default_last_path, 'har.zip')
     if os.path.exists(har_path):
@@ -242,12 +254,8 @@ async def _finish_pw_context(screenshot=False, last_path=None):
         for msg in console_messages:
             f.write(f"{msg['timestamp']:.3f} {msg['url']} [{msg['type']}] {msg['text']}\n")
     print(f'Console: {console_log_path}')
-    shutil.rmtree(temp_dir)
-    for page in current_pages:
-        await page.close()
-    if len(current_contexts) == 0:
-        return
-    await _finish_pw_context(screenshot=False, last_path=last_path)
+    if temp_dir and os.path.isdir(temp_dir):
+        shutil.rmtree(temp_dir)
 
 async def mock_clipboard(page):
     """Mock navigator.clipboard for non-secure contexts."""
