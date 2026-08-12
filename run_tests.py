@@ -606,8 +606,12 @@ class TestRunner:
             self.run_notebook(
                 '取りまとめ-グループ.ipynb',
                 admin_rdm_url=self.admin_rdm_url,
-                admin_idp_username_1 = self.idp_username_institutional_admin,
-                admin_idp_password_1 = self.idp_password_institutional_admin,
+                idp_username_institutional_admin=self.idp_username_institutional_admin,
+                idp_password_institutional_admin=self.idp_password_institutional_admin,
+                idp_username_1=self.idp_username_1,
+                idp_password_1=self.idp_password_1,
+                idp_username_2=self.idp_username_2,
+                idp_password_2=self.idp_password_2,
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
             )
