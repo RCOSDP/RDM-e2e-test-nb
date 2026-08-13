@@ -101,6 +101,29 @@ class TestRunner:
         self.idp_name_project_limit_2 = None
         self.idp_username_project_limit_2 = None
         self.idp_password_project_limit_2 = None
+        
+        # Mapcore group test parameters
+        self.idp_name_3 = None
+        self.idp_username_3 = None
+        self.idp_password_3 = None
+        self.idp_name_4 = None
+        self.idp_username_4 = None
+        self.idp_password_4 = None
+        self.idp_name_5 = None
+        self.idp_username_5 = None
+        self.idp_password_5 = None
+        self.display_username_institutional_admin = None
+        self.display_username_1 = None
+        self.display_username_2 = None
+        self.display_username_3 = None
+        self.display_username_4 = None
+        self.display_username_5 = None
+        self.group_a = None
+        self.group_b = None
+        self.group_c = None
+        self.group_d = None
+        self.group_search = None
+        self.group_note_text = None
 
         # Exclude notebooks
         self.exclude_notebooks = []
@@ -645,6 +668,24 @@ class TestRunner:
                 idp_password_1=self.idp_password_1,
                 idp_username_2=self.idp_username_2,
                 idp_password_2=self.idp_password_2,
+                idp_username_3=self.idp_username_3,
+                idp_password_3=self.idp_password_3,
+                idp_username_4=self.idp_username_4,
+                idp_password_4=self.idp_password_4,
+                idp_username_5=self.idp_username_5,
+                idp_password_5=self.idp_password_5,
+                display_username_institutional_admin=self.display_username_institutional_admin,
+                display_username_1=self.display_username_1,
+                display_username_2=self.display_username_2,
+                display_username_3=self.display_username_3,
+                display_username_4=self.display_username_4,
+                display_username_5=self.display_username_5,
+                group_a=self.group_a,
+                group_b=self.group_b,
+                group_c=self.group_c,
+                group_d=self.group_d,
+                group_search=self.group_search,
+                group_note_text=self.group_note_text,
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
             )
