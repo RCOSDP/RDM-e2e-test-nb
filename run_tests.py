@@ -93,6 +93,15 @@ class TestRunner:
         self.workflow_test_mode = None
         self.institution_name = None
         
+        # Project limit dedicated user parameters
+        self.idp_name_project_limit_1 = None
+        self.idp_username_project_limit_1 = None
+        self.idp_password_project_limit_1 = None
+        self.institution_name_project_limit_1 = None
+        self.idp_name_project_limit_2 = None
+        self.idp_username_project_limit_2 = None
+        self.idp_password_project_limit_2 = None
+
         # Exclude notebooks
         self.exclude_notebooks = []
         
@@ -419,6 +428,30 @@ class TestRunner:
                 )
             )
             
+    def run_project_limit_tests(self):
+        """Run project limit number tests."""
+        print('\n=== Project Limit Tests ===')
+
+        if not self.skip_admin:
+            self.result_notebooks.append(
+                self.run_notebook(
+                    '取りまとめ-管理者機能-プロジェクト制限数.ipynb',
+                    admin_rdm_url=self.admin_rdm_url,
+                    idp_name_project_limit_1=getattr(self, 'idp_name_project_limit_1', None),
+                    idp_username_project_limit_1=getattr(self, 'idp_username_project_limit_1', None),
+                    idp_password_project_limit_1=getattr(self, 'idp_password_project_limit_1', None),
+                    institution_name_project_limit_1=getattr(self, 'institution_name_project_limit_1', None),
+                    idp_name_project_limit_2=getattr(self, 'idp_name_project_limit_2', None),
+                    idp_username_project_limit_2=getattr(self, 'idp_username_project_limit_2', None),
+                    idp_password_project_limit_2=getattr(self, 'idp_password_project_limit_2', None),
+                    idp_name_integrated_admin=getattr(self, 'idp_name_integrated_admin', None),
+                    idp_username_integrated_admin=getattr(self, 'idp_username_integrated_admin', None),
+                    idp_password_integrated_admin=getattr(self, 'idp_password_integrated_admin', None),
+                    skip_failed_test=self.skip_failed_test,
+                    exclude_notebooks=self.exclude_notebooks,
+                )
+            )
+
     def run_jupyterhub_tests(self):
         """Run BinderHub/TLJH related tests."""
         print('\n=== JupyterHub Tests ===')
@@ -716,6 +749,7 @@ class TestRunner:
         self.run_s3compatsigv4_institutional_storage_tests()
         self.run_metadata_tests()
         self.run_admin_tests()
+        self.run_project_limit_tests()
         self.run_jupyterhub_tests()
         self.run_weko_tests()
         self.run_mibyo_db_tests()
