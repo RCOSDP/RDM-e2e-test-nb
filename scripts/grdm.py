@@ -522,6 +522,28 @@ async def open_edit_wiki(page, transition_timeout=60000):
     await expect(page.locator('#mEditor .ProseMirror[contenteditable="true"]')).to_be_visible(timeout=transition_timeout)
 
 
+async def reload_wiki_view(page, transition_timeout=60000):
+    """Wiki を reload し、閲覧画面（「編集」ボタン）まで戻す。"""
+    await leave_edit_wiki_if_open(page, transition_timeout=transition_timeout)
+    await page.reload(wait_until='domcontentloaded')
+    consent = page.locator('//button[text() = "同意する"]')
+    if await consent.count():
+        try:
+            if await consent.first.is_visible():
+                await consent.first.click()
+        except Exception:
+            pass
+    await expect(page.locator('#editWysiwyg')).to_be_visible(timeout=transition_timeout)
+    await wait_awareness_settle(page, ms=2000)
+
+
+async def open_solo_edit_wiki(page, transition_timeout=60000):
+    """ページを reload してから編集を開く。"""
+    await reload_wiki_view(page, transition_timeout=transition_timeout)
+    await open_edit_wiki(page, transition_timeout=transition_timeout)
+    await wait_awareness_settle(page, ms=1500)
+
+
 async def open_edit_wiki_collab(page, transition_timeout=60000):
     """2タブ共同編集向け。タブ前面化と Milkdown 共同編集テンプレート待ちを含む。"""
     await page.bring_to_front()
