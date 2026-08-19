@@ -210,10 +210,11 @@ async def expect_dashboard(page, transition_timeout=30000, retries=3):
             # 1分待って再チャレンジ
             await asyncio.sleep(60)            
     
-async def ensure_project_exists(page, project_name, transition_timeout=30000):
+async def ensure_project_exists(page, project_name, transition_timeout=30000, existence_timeout=10000):
     await expect(page.locator('//*[@data-test-create-project-modal-button]')).to_have_count(1, timeout=transition_timeout)
     try:
-        await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible()
+        # 不存在(タイムアウト)が作成フローへの正常分岐のため、既定の長いexpectタイムアウトを使わない
+        await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible(timeout=existence_timeout)
         return False
     except:
         # プロジェクトが存在しない
