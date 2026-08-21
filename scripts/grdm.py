@@ -210,10 +210,11 @@ async def expect_dashboard(page, transition_timeout=30000, retries=3):
             # 1分待って再チャレンジ
             await asyncio.sleep(60)            
     
-async def ensure_project_exists(page, project_name, transition_timeout=30000):
+async def ensure_project_exists(page, project_name, transition_timeout=30000, existence_timeout=10000):
     await expect(page.locator('//*[@data-test-create-project-modal-button]')).to_have_count(1, timeout=transition_timeout)
     try:
-        await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible()
+        # 不存在(タイムアウト)が作成フローへの正常分岐のため、既定の長いexpectタイムアウトを使わない
+        await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible(timeout=existence_timeout)
         return False
     except:
         # プロジェクトが存在しない
@@ -371,26 +372,39 @@ async def drop_file(page, element_locator, path):
 async def drag_and_drop(page, source, dest):
     await expect(source).to_have_class(re.compile('.*ui-draggable.*'))
 
-    center_coordinates_source = await source.evaluate('''element => {
-        const rect = element.getBoundingClientRect();
-        return {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2
-        };
-    }''')
+    # ドロップ先→ソースの順で可視化し、両方がビューポート内にあることを保証する
+    await dest.scroll_into_view_if_needed()
+    await source.scroll_into_view_if_needed()
+    await expect(dest).to_be_in_viewport()
+    await expect(source).to_be_in_viewport()
 
-    center_coordinates_dest = await dest.evaluate('''element => {
-        const rect = element.getBoundingClientRect();
-        return {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2
-        };
-    }''')
+    async def centers():
+        result = []
+        for locator in (source, dest):
+            result.append(await locator.evaluate('''element => {
+                const rect = element.getBoundingClientRect();
+                return [rect.left + rect.width / 2, rect.top + rect.height / 2];
+            }'''))
+        return result
 
-    await page.mouse.move(center_coordinates_source['x'], center_coordinates_source['y'])
+    # jQuery UIはドラッグ開始時にドロップ先の位置をキャッシュするため、開始前に
+    # レイアウトが静止していること(バナー出現や再描画の途中でないこと)を確認する
+    previous = await centers()
+    for _ in range(25):
+        await page.wait_for_timeout(200)
+        current = await centers()
+        if current == previous:
+            break
+        previous = current
+    else:
+        raise AssertionError(f'layout did not settle before drag and drop: {current}')
+
+    (source_x, source_y), (dest_x, dest_y) = current
+
+    await page.mouse.move(source_x, source_y)
     await page.mouse.down()
     await page.wait_for_timeout(1000)
-    await page.mouse.move(center_coordinates_dest['x'], center_coordinates_dest['y'], steps=30)
+    await page.mouse.move(dest_x, dest_y, steps=30)
     await page.wait_for_timeout(1000)
     await page.mouse.up()
 

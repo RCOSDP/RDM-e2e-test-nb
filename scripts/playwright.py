@@ -134,6 +134,9 @@ async def init_pw_context(close_on_fail=True, last_path=None, browser_type='chro
         await playwright.stop()
         playwright = None
     playwright = await async_playwright().start()
+    # timeout未指定のexpectはライブラリ既定の5秒に落ちてタイミング起因の失敗源になる
+    # ため、既定を transition_timeout の慣行値へ引き上げる (明示指定は影響を受けない)
+    expect.set_options(timeout=60000)
     current_session_id = datetime.now().strftime('%Y%m%d-%H%M%S')
     default_last_path = last_path or os.path.join(os.path.expanduser('~/last-screenshots'), current_session_id)
     temp_dir = tempfile.mkdtemp()
