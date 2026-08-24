@@ -6,6 +6,8 @@ import os
 import re
 import time
 import traceback
+from urllib.parse import urljoin
+
 from playwright.async_api import expect
 
 
@@ -486,6 +488,41 @@ async def verify_property_folder_info(
 
     time.sleep(1)
     
+async def goto_wiki_by_name(page, wikiname, transition_timeout=60000):
+    """サイドバーの Wiki リンク href（相対 URL 可）から遷移する。"""
+    wiki_link = page.locator(f'//*[contains(@class, "title-text")]//a[text()="{wikiname}"]')
+    href = await wiki_link.first.get_attribute('href')
+    assert href, f'Wiki "{wikiname}" のリンクが見つかりません'
+    url = urljoin(page.url, href)
+    try:
+        await page.goto(url, timeout=transition_timeout, wait_until='domcontentloaded')
+    except Exception as e:
+        # 編集モード中の遷移などで goto が中断されても、目的の Wiki に着いていれば続行する
+        if 'ERR_ABORTED' not in str(e):
+            raise
+    await expect(page.locator('#pageName')).to_have_text(wikiname, timeout=transition_timeout)
+
+
+async def leave_edit_wiki_if_open(page, transition_timeout=60000):
+    """編集モードなら閲覧へ戻す。未保存確認が出た場合は破棄する。"""
+    modal = page.locator('#closeConfirmModal')
+    if not await page.locator('#mMenuBar').is_visible():
+        return
+    if await modal.is_visible():
+        await page.locator('#closeConfirmModal button.btn-danger').click()
+        await expect(modal).not_to_be_visible(timeout=transition_timeout)
+        await expect(page.locator('#editWysiwyg')).to_be_visible(timeout=transition_timeout)
+        return
+    await page.locator('#revert-button').click()
+    try:
+        await expect(modal).to_be_visible(timeout=3000)
+        await page.locator('#closeConfirmModal button.btn-danger').click()
+        await expect(modal).not_to_be_visible(timeout=transition_timeout)
+    except AssertionError:
+        pass
+    await expect(page.locator('#editWysiwyg')).to_be_visible(timeout=transition_timeout)
+
+
 async def open_wiki(page, wikiname, text, transition_timeout=60000):
     await page.locator(f'//*[contains(@class, "title-text")]//a[text()="{wikiname}"]').click()
     await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
@@ -497,6 +534,190 @@ async def open_edit_wiki(page, transition_timeout=60000):
     await page.locator('//div[@id="editWysiwyg"]//span[normalize-space()="編集"]').click()
     await expect(page.locator('#mMenuBar')).to_be_visible(timeout=transition_timeout)
     await expect(page.locator('#mEditor .ProseMirror[contenteditable="true"]')).to_be_visible(timeout=transition_timeout)
+
+
+async def open_edit_wiki_collab(page, transition_timeout=60000):
+    """2タブ共同編集向け。タブ前面化と Milkdown 共同編集テンプレート待ちを含む。"""
+    await page.bring_to_front()
+    await open_edit_wiki(page, transition_timeout=transition_timeout)
+    await page.wait_for_timeout(500)
+
+
+async def open_edit_wiki_after_close(page, transition_timeout=60000, settle_ms=2000, force_collab_rejoin=False):
+    """Close 後プレビューから「編集」を押す。
+
+    force_collab_rejoin=True のとき milkdown を外し connectCollab 再実行 path を通す。
+    """
+    if force_collab_rejoin:
+        await prepare_collab_rejoin_after_close(page)
+    await page.bring_to_front()
+    edit_button = page.locator('#editWysiwyg')
+    await expect(edit_button).to_be_visible(timeout=transition_timeout)
+    await wait_awareness_settle(page, ms=settle_ms)
+    await edit_button.scroll_into_view_if_needed()
+    await edit_button.click()
+    await expect(page.locator('#editWysiwyg')).not_to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#mMenuBar')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#mEditor .ProseMirror[contenteditable="true"]')).to_be_visible(
+        timeout=transition_timeout
+    )
+    if force_collab_rejoin:
+        await expect_live_editing(page, transition_timeout=transition_timeout)
+        await wait_awareness_settle(page, ms=3000)
+    else:
+        await wait_awareness_settle(page, ms=1500)
+
+
+async def expect_live_editing(page, transition_timeout=60000):
+    collab = page.locator('#collaborativeStatus')
+    await expect(collab).to_be_visible(timeout=transition_timeout)
+    await expect(collab).to_contain_text('Live editing mode', timeout=transition_timeout)
+
+
+async def _open_collaborative_edit_on_page(page, transition_timeout=60000):
+    consent = page.locator('//button[text() = "同意する"]')
+    if await consent.count():
+        await consent.click()
+    await open_edit_wiki_collab(page, transition_timeout=transition_timeout)
+
+
+async def get_wiki_user_fullname(page):
+    fullname = await page.evaluate(
+        "() => (window.contextVars.currentUser || {}).fullname || ''"
+    )
+    assert fullname, 'window.contextVars.currentUser.fullname が取得できません'
+    return fullname
+
+
+def remote_collaborator_name_locator(page, name):
+    return page.locator('#mEditor .ProseMirror-yjs-cursor div').filter(has_text=name)
+
+
+async def expect_remote_collaborator_name(page, name, visible=True, transition_timeout=60000):
+    locator = remote_collaborator_name_locator(page, name)
+    if visible:
+        await expect(locator.first).to_be_visible(timeout=transition_timeout)
+    else:
+        await expect(locator).to_have_count(0, timeout=transition_timeout)
+
+
+async def wait_awareness_settle(page, ms=500):
+    await page.wait_for_timeout(ms)
+
+
+async def nudge_collab_pages(sender, receiver, settle_ms=500):
+    """送信側→受信側の順にタブを前面化し、headless 2 タブ共同編集の Yjs 更新を促す。"""
+    await sender.bring_to_front()
+    await wait_awareness_settle(sender, ms=settle_ms)
+    await receiver.bring_to_front()
+    await wait_awareness_settle(receiver, ms=settle_ms)
+
+
+async def get_meditor_milkdown_count(page):
+    return await page.evaluate(
+        "() => document.getElementById('mEditor').querySelectorAll('div.milkdown').length"
+    )
+
+
+async def prepare_collab_rejoin_after_close(page):
+    """A Close 後の再 Edit で milkdown を外し、connectCollab 再実行 path を通す。"""
+    if await get_meditor_milkdown_count(page) == 0:
+        return
+    await page.evaluate(
+        "() => document.getElementById('mEditor').querySelectorAll('div.milkdown').forEach(function (div) { div.remove(); })"
+    )
+    await wait_awareness_settle(page, ms=500)
+
+
+async def flush_collab_yjs(sender, receiver, rounds=8, settle_ms=500):
+    """B 追記後、Close 中タブ A の Y.Doc へ更新が届くまで B→A を繰り返し前面化する。"""
+    for _ in range(rounds):
+        await nudge_collab_pages(sender, receiver, settle_ms=settle_ms)
+
+
+async def reopen_collab_edit_on_receiver(page, peer_page, transition_timeout=60000, settle_ms=2000):
+    """Close 中の page(A) を peer(B) の live Yjs へ再接続して再 Edit する。"""
+    await flush_collab_yjs(peer_page, page, rounds=4, settle_ms=500)
+    await open_edit_wiki_after_close(
+        page,
+        transition_timeout=transition_timeout,
+        settle_ms=settle_ms,
+        force_collab_rejoin=True,
+    )
+    await expect_live_editing(page, transition_timeout=transition_timeout)
+
+
+async def wait_for_collab_meditor_text(
+    page,
+    text,
+    peer_page=None,
+    transition_timeout=60000,
+    settle_ms=500,
+    stable_checks=1,
+    nudge_peer_ms=1000,
+):
+    """共同編集で page の #mEditor に text が載るまでポーリングする。
+
+    受信側 page を前面固定し、peer_page があれば定期的に短く前面化して Yjs 更新を促す。
+    """
+    import time
+
+    await page.bring_to_front()
+    if peer_page is not None:
+        await nudge_collab_pages(peer_page, page, settle_ms=settle_ms)
+    content = page.locator('#mEditor')
+    deadline = time.monotonic() + transition_timeout / 1000
+    last_error = None
+    consecutive = 0
+    last_nudge = time.monotonic()
+    while time.monotonic() < deadline:
+        if peer_page is not None and time.monotonic() - last_nudge >= nudge_peer_ms / 1000:
+            await nudge_collab_pages(peer_page, page, settle_ms=settle_ms)
+            last_nudge = time.monotonic()
+        else:
+            await wait_awareness_settle(page, ms=settle_ms)
+        try:
+            await expect(content).to_contain_text(text, timeout=1000)
+            consecutive += 1
+            if consecutive >= stable_checks:
+                return
+        except AssertionError as error:
+            last_error = error
+            consecutive = 0
+    assert last_error is not None
+    raise last_error
+
+
+async def open_collaborative_peer(page_a, transition_timeout=60000):
+    """同一ブラウザコンテキストで第2タブを開き、page_a と同じ Wiki の共同編集に参加する。"""
+    await expect_live_editing(page_a, transition_timeout=transition_timeout)
+    page_b = await page_a.context.new_page()
+    await page_b.goto(page_a.url, timeout=transition_timeout, wait_until='domcontentloaded')
+    await _open_collaborative_edit_on_page(page_b, transition_timeout=transition_timeout)
+    await expect_live_editing(page_b, transition_timeout=transition_timeout)
+    return page_b
+
+
+async def open_fresh_collaborative_peer(live_peer_page, transition_timeout=60000):
+    """編集中 peer と同じ Wiki を新タブで共同編集参加する（live Y.Doc に参加）。"""
+    await expect_live_editing(live_peer_page, transition_timeout=transition_timeout)
+    new_page = await live_peer_page.context.new_page()
+    await new_page.goto(live_peer_page.url, timeout=transition_timeout, wait_until='domcontentloaded')
+    await _open_collaborative_edit_on_page(new_page, transition_timeout=transition_timeout)
+    await expect_live_editing(new_page, transition_timeout=transition_timeout)
+    await wait_awareness_settle(new_page, ms=2000)
+    return new_page
+
+
+async def handoff_to_fresh_collab_peer(live_peer_page, required_text=None, transition_timeout=60000):
+    """live Y.Doc 参加用の新タブへ切り替え、旧 peer タブを閉じる。"""
+    new_page = await open_fresh_collaborative_peer(live_peer_page, transition_timeout=transition_timeout)
+    if required_text is not None:
+        await expect(new_page.locator('#mEditor')).to_contain_text(
+            required_text, timeout=transition_timeout
+        )
+    await live_peer_page.close()
+    return new_page
 
 async def select_text_range(page, text, transition_timeout=60000):
     editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
@@ -525,6 +746,48 @@ async def fill_text(page, text, transition_timeout=60000):
     await editor_locator.fill(text)
     await expect(editor_locator).to_have_text(text, timeout=transition_timeout)
 
+
+async def replace_wiki_text(page, text, transition_timeout=60000):
+    """全文置換（Close 確認テスト向け）。Milkdown 保存用 Markdown も更新する。"""
+    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    await editor_locator.click()
+    await editor_locator.evaluate(
+        """
+        (el, text) => {
+            el.focus();
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand('delete', false, null);
+            document.execCommand('insertText', false, text);
+        }
+        """,
+        text,
+    )
+    await expect(editor_locator).to_contain_text(text, timeout=transition_timeout)
+
+
+async def append_wiki_text(page, text, transition_timeout=60000, type_delay=50):
+    """末尾に追記する。keyboard.type で ProseMirror / 保存用 Markdown を更新する。"""
+    await page.bring_to_front()
+    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    await editor_locator.click()
+    await page.keyboard.press("ControlOrMeta+End")
+    await page.keyboard.press("Enter")
+    await page.keyboard.type(text, delay=type_delay)
+    await expect(editor_locator).to_contain_text(text, timeout=transition_timeout)
+
+
+async def append_wiki_text_live(page, text, transition_timeout=60000):
+    """共同編集ライブ追記向け。keyboard.type で追記し Yjs 送信の余裕を取る。"""
+    await expect_live_editing(page, transition_timeout=transition_timeout)
+    await wait_awareness_settle(page, ms=500)
+    await append_wiki_text(page, text, transition_timeout=transition_timeout, type_delay=100)
+    await wait_awareness_settle(page, ms=3000)
+    await expect_live_editing(page, transition_timeout=transition_timeout)
+
 async def click_wiki_menu_save(page, menu_list, transition_timeout=60000):
     for menu in menu_list:
         locator_by_id = page.locator(f'#{menu}')
@@ -545,6 +808,14 @@ async def click_wiki_menu_save(page, menu_list, transition_timeout=60000):
 
     await page.locator('//input[@type="submit" and @value="保存"]').click()
     await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+
+
+async def click_wiki_footer_save(page, transition_timeout=60000):
+    """編集フッターの「保存」で DB 保存し、閲覧モードへ遷移する。"""
+    async with page.expect_navigation(timeout=transition_timeout):
+        await page.locator('//input[@type="submit" and @value="保存"]').click()
+    await expect(page.locator('#editWysiwyg')).to_be_visible(timeout=transition_timeout)
+
 
 async def set_text_color(color_input, r, g, b):
     r = max(0, min(255, r))
@@ -598,6 +869,53 @@ async def click_table_menu_save(page, row_index, col_index, table_menu, transiti
 
     view_locator = page.locator('#mView .ProseMirror[contenteditable="false"]')
     await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+
+async def _dismiss_dialog_safe(dialog):
+    try:
+        await dialog.dismiss()
+    except Exception as e:
+        if 'already handled' not in str(e):
+            raise
+
+
+async def expect_no_dialog(page, action, transition_timeout=60000):
+    """action 実行中に dialog が出ないことを確認する。"""
+    messages = []
+
+    async def on_dialog(dialog):
+        messages.append(dialog.message)
+        await _dismiss_dialog_safe(dialog)
+
+    page.on('dialog', on_dialog)
+    try:
+        await action()
+    finally:
+        page.remove_listener('dialog', on_dialog)
+
+    assert not messages, f'離脱警告が表示された: {messages}'
+
+
+async def expect_beforeunload(page, action, transition_timeout=60000):
+    """action 実行で beforeunload が出ることを確認し dismiss する。"""
+    dialog_event = asyncio.Event()
+    captured = {}
+
+    async def on_dialog(dialog):
+        captured['dialog'] = dialog
+        await _dismiss_dialog_safe(dialog)
+        dialog_event.set()
+
+    page.on('dialog', on_dialog)
+    try:
+        await action()
+        await asyncio.wait_for(dialog_event.wait(), timeout=transition_timeout / 1000)
+    finally:
+        page.remove_listener('dialog', on_dialog)
+
+    dialog = captured.get('dialog')
+    assert dialog is not None, 'beforeunload が表示されませんでした'
+    assert dialog.type == 'beforeunload', f'想定外のダイアログ: type={dialog.type}'
+
 
 async def click_and_expect_alert(page, action, expected_message, transition_timeout=60000):
     async with page.expect_event("dialog", timeout=transition_timeout*5) as dialog_info:
