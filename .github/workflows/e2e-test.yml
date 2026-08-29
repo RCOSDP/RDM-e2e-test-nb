@@ -60,7 +60,7 @@ on:
         required: false
         default: ''
       tljh_repo2docker_image:
-        description: 'repo2docker Docker image (default: gcr.io/nii-ap-ops/repo2docker:2026.02.0)'
+        description: 'repo2docker Docker image (default: gcr.io/nii-ap-ops/repo2docker:2026.07.2)'
         required: false
         default: ''
       tljh_rdmfs_image:
@@ -1214,7 +1214,7 @@ jobs:
       env:
         TLJH_VERSION: ${{ env.TLJH_VERSION_OVERRIDE || github.event.inputs.tljh_version || '1.0.0' }}
         TLJH_PLUGIN: ${{ env.TLJH_PLUGIN_OVERRIDE || github.event.inputs.tljh_plugin || 'RCOSDP/CS-tljh-repo2docker@master' }}
-        REPO2DOCKER_IMAGE: ${{ env.TLJH_REPO2DOCKER_IMAGE_OVERRIDE || github.event.inputs.tljh_repo2docker_image || 'gcr.io/nii-ap-ops/repo2docker:2026.02.0' }}
+        REPO2DOCKER_IMAGE: ${{ env.TLJH_REPO2DOCKER_IMAGE_OVERRIDE || github.event.inputs.tljh_repo2docker_image || 'gcr.io/nii-ap-ops/repo2docker:2026.07.2' }}
         RDMFS_IMAGE: ${{ env.TLJH_RDMFS_IMAGE_OVERRIDE || github.event.inputs.tljh_rdmfs_image || 'gcr.io/nii-ap-ops/rdmfs:2026.02.1' }}
       run: |
         .github/scripts/setup_tljh.sh install
