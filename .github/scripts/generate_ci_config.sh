@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
-Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki]
+Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--aws-s3] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki]
 USAGE
   exit 1
 fi
@@ -12,6 +12,7 @@ OUTPUT=$1
 BASE_CONFIG=$2
 shift 2
 MINIO=false
+AWS_S3=false
 JUPYTERHUB=false
 WEKO=false
 FLOWABLE=false
@@ -23,6 +24,9 @@ for arg in "$@"; do
   case "$arg" in
     --minio)
       MINIO=true
+      ;;
+    --aws-s3)
+      AWS_S3=true
       ;;
     --jupyterhub)
       JUPYTERHUB=true
@@ -49,6 +53,11 @@ for arg in "$@"; do
   esac
 
 done
+
+if [[ "${MINIO}" == "true" && "${AWS_S3}" == "true" ]]; then
+  echo "--minio and --aws-s3 both write storages_s3 and cannot be used together" >&2
+  exit 1
+fi
 
 cp "${BASE_CONFIG}" "${OUTPUT}"
 
@@ -78,10 +87,63 @@ s3compat_test_bucket_name_2: '${S3COMPAT_BUCKET_NAME_2}'
 s3compat_type_name_1: '${S3COMPAT_SERVICE_NAME}'
 s3compat_type_name_2: '${S3COMPAT_SERVICE_NAME}'
 EOF
-else
+elif [[ "${AWS_S3}" != "true" ]]; then
   cat >> "${OUTPUT}" <<'EOF'
 
 storages_s3: []
+EOF
+fi
+
+if [[ "${AWS_S3}" == "true" ]]; then
+  required_aws_s3_vars=(
+    AWS_S3_ACCESS_KEY_1
+    AWS_S3_SECRET_KEY_1
+    AWS_S3_ACCESS_KEY_2
+    AWS_S3_SECRET_KEY_2
+    AWS_S3_LEGACY_REGION
+    AWS_S3_LEGACY_BUCKET_NAME
+    AWS_S3_V4_REGION
+    AWS_S3_V4_BUCKET_NAME
+  )
+
+  missing_aws_s3_vars=()
+  for var_name in "${required_aws_s3_vars[@]}"; do
+    if [[ -z "${!var_name:-}" ]]; then
+      missing_aws_s3_vars+=("${var_name}")
+    fi
+  done
+
+  if [[ ${#missing_aws_s3_vars[@]} -gt 0 ]]; then
+    echo "AWS S3 test credentials are not set: ${missing_aws_s3_vars[*]}" >&2
+    exit 1
+  fi
+
+  if [[ "${AWS_S3_ACCESS_KEY_1}" == "${AWS_S3_ACCESS_KEY_2}" ]]; then
+    echo "AWS_S3_ACCESS_KEY_1 and AWS_S3_ACCESS_KEY_2 must be different" >&2
+    exit 1
+  fi
+
+  if [[ "${AWS_S3_SECRET_KEY_1}" == "${AWS_S3_SECRET_KEY_2}" ]]; then
+    echo "AWS_S3_SECRET_KEY_1 and AWS_S3_SECRET_KEY_2 must be different" >&2
+    exit 1
+  fi
+
+  cat >> "${OUTPUT}" <<EOF
+
+storages_s3:
+  - id: 's3'
+    name: 'Amazon S3'
+    skip_too_many_files_check: true
+
+s3_access_key_1: '${AWS_S3_ACCESS_KEY_1}'
+s3_secret_access_key_1: '${AWS_S3_SECRET_KEY_1}'
+s3_default_region_1: '${AWS_S3_LEGACY_REGION}'
+s3_test_bucket_name_1: '${AWS_S3_LEGACY_BUCKET_NAME}'
+
+s3_access_key_2: '${AWS_S3_ACCESS_KEY_2}'
+s3_secret_access_key_2: '${AWS_S3_SECRET_KEY_2}'
+s3_default_region_2: '${AWS_S3_V4_REGION}'
+s3_test_bucket_name_2: '${AWS_S3_V4_BUCKET_NAME}'
 EOF
 fi
 

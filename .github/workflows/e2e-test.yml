@@ -238,6 +238,30 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+          # AWS S3 (SigV4リージョン) の実接続テスト。
+          # このジョブは実AWSのアクセスキー等を GitHub Secrets
+          #   (AWS_S3_ACCESS_KEY_1/2, AWS_S3_SECRET_KEY_1/2,
+          #    AWS_S3_LEGACY_REGION, AWS_S3_LEGACY_BUCKET_NAME,
+          #    AWS_S3_V4_REGION, AWS_S3_V4_BUCKET_NAME)
+          # から取得する。パブリックリポジトリでは Secret を登録できないため
+          # 既定では無効化している（有効なままだと認証情報未設定でCIが失敗する）。
+          #
+          # ローカル / Secret を設定済みのプライベートfork でテストする場合のみ、
+          # 以下のブロックのコメントを解除して有効化すること。
+          # - name: user-aws-s3
+          #   display_name: "User Tests (AWS S3 SigV4 Regions)"
+          #   include_admin: false
+          #   skip_admin: true
+          #   skip_metadata: true
+          #   skip_default_storage: true
+          #   skip_login: true
+          #   skip_130mb_upload: true
+          #   minio_enabled: false
+          #   aws_s3_enabled: true
+          #   weko_enabled: false
+          #   jupyterhub_enabled: false
+          #   flowable_enabled: false
+          #   wiki_enabled: false
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -375,6 +399,7 @@ jobs:
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
+      AWS_S3_ENABLED: ${{ matrix.test-group.aws_s3_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
@@ -388,6 +413,14 @@ jobs:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_REGION: us-east-1
       MINIO_SERVICE_NAME: MinIO (CI)
+      AWS_S3_ACCESS_KEY_1: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_ACCESS_KEY_1 || '' }}
+      AWS_S3_SECRET_KEY_1: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_SECRET_KEY_1 || '' }}
+      AWS_S3_ACCESS_KEY_2: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_ACCESS_KEY_2 || '' }}
+      AWS_S3_SECRET_KEY_2: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_SECRET_KEY_2 || '' }}
+      AWS_S3_LEGACY_REGION: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_LEGACY_REGION || '' }}
+      AWS_S3_LEGACY_BUCKET_NAME: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_LEGACY_BUCKET_NAME || '' }}
+      AWS_S3_V4_REGION: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_V4_REGION || '' }}
+      AWS_S3_V4_BUCKET_NAME: ${{ matrix.test-group.aws_s3_enabled == true && secrets.AWS_S3_V4_BUCKET_NAME || '' }}
 
     steps:
     - name: Checkout test repository
@@ -1310,6 +1343,28 @@ jobs:
         docker-compose exec -T web python3 -m scripts.register_erad_metadata /tmp/erad_sample.csv
         echo "e-Rad data registered successfully"
 
+    - name: Validate and mask sensitive test credentials
+      working-directory: e2e-tests
+      run: |
+        set -euo pipefail
+
+        bash .github/scripts/mask_sensitive_artifacts.sh /tmp/nonexistent-mask-target
+
+        if [ "${AWS_S3_ENABLED}" = "true" ]; then
+          if [ -z "${AWS_S3_ACCESS_KEY_1}" ] || [ -z "${AWS_S3_SECRET_KEY_1}" ] || [ -z "${AWS_S3_ACCESS_KEY_2}" ] || [ -z "${AWS_S3_SECRET_KEY_2}" ]; then
+            echo "AWS S3 test credentials are not fully configured. Set AWS_S3_ACCESS_KEY_1, AWS_S3_SECRET_KEY_1, AWS_S3_ACCESS_KEY_2, and AWS_S3_SECRET_KEY_2 secrets."
+            exit 1
+          fi
+          if [ "${AWS_S3_ACCESS_KEY_1}" = "${AWS_S3_ACCESS_KEY_2}" ]; then
+            echo "AWS_S3_ACCESS_KEY_1 and AWS_S3_ACCESS_KEY_2 must be different."
+            exit 1
+          fi
+          if [ "${AWS_S3_SECRET_KEY_1}" = "${AWS_S3_SECRET_KEY_2}" ]; then
+            echo "AWS_S3_SECRET_KEY_1 and AWS_S3_SECRET_KEY_2 must be different."
+            exit 1
+          fi
+        fi
+
     - name: Prepare test configuration
       working-directory: e2e-tests
       run: |
@@ -1376,6 +1431,9 @@ jobs:
         args=(ci.config.yaml base_ci.config.yaml)
         if [ "${MINIO_ENABLED}" = "true" ]; then
           args+=(--minio)
+        fi
+        if [ "${AWS_S3_ENABLED}" = "true" ]; then
+          args+=(--aws-s3)
         fi
         if [ "${JUPYTERHUB_ENABLED}" = "true" ]; then
           args+=(--jupyterhub)
@@ -1453,6 +1511,12 @@ jobs:
         fi
         echo "ticket=$TICKET" >> $GITHUB_OUTPUT
         echo "Extracted ticket: $TICKET"
+
+    - name: Mask sensitive values in test artifacts
+      if: always()
+      working-directory: e2e-tests
+      run: |
+        bash .github/scripts/mask_sensitive_artifacts.sh result result-failed
 
     - name: Generate Excel summary
       if: always()
