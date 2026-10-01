@@ -31,6 +31,7 @@ venv/
 last-screenshots/
 test-results/
 reports/
+evidence/
 
 # Config files with secrets
 *.config.yaml

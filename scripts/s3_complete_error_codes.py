@@ -7,33 +7,42 @@ RDM-waterbutler の ``waterbutler/providers/s3/provider.py`` には
 「CompleteMultipartUpload がこのコードで落ちたなら、オブジェクトは確実に
 できていない(= NOT_COMMITTED)」と判断するための表で、**MinIO の実装と S3 の
 仕様書から起こしたもので AWS S3 の実機では確認されていない**(provider.py の
-同箇所のコメント)。TEST_SPEC E-1 はこの突合を求めている。
+同箇所のコメント)。受入項目 E-1 はこの突合を求めている。
 
 本スクリプトは AWS に対して壊れた CompleteMultipartUpload を投げ、返ってきた
 Error Code を採取して表と突き合わせる。**コード側(表)は変更しない。**
 表に無いコードが出た場合は、WaterButler の既定どおり ``UNKNOWN``
 (= オブジェクトができたかどうか分からない)として記録するだけ。
-これが TEST_SPEC E-1 の合格基準である。
+これが E-1 の合格基準である。
 
-使い方::
+使い方(バケットも本スクリプトに作らせる場合)::
 
-    export AWS_ACCESS_KEY_ID=...
-    export AWS_SECRET_ACCESS_KEY=...
+    AWS_PROFILE=<プロファイル名> \\
+        python3 scripts/s3_complete_error_codes.py --create-bucket \\
+        --out <証跡ディレクトリ>
+
+``--create-bucket`` は ``e2e-sigv4-s6-<YYYYmmdd-HHMMSS>`` を ``E2E_S3_REGION``
+(既定 ``us-east-1``)に作り、**正常終了でも例外でも空にして削除する**。
+
+使い方(既にあるバケットを使う場合)::
+
     export E2E_S3_BUCKET=...
     export E2E_S3_REGION=us-east-1          # 省略時 us-east-1
-    python3 scripts/s3_complete_error_codes.py --out <証跡ディレクトリ>
+    AWS_PROFILE=<プロファイル名> \\
+        python3 scripts/s3_complete_error_codes.py --out <証跡ディレクトリ>
 
 ``E2E_S3_BUCKET`` / ``E2E_S3_REGION`` の 2 行は、SigV4 回帰ノートブックの
 バケット生成セル(セル [6])が ``export …`` の形で印字するので、それをそのまま
 貼ればよい。ノートブックは既定でバケットを生成し**後始末で削除する**ので、
-本スクリプトはノートブックの後始末セルより**前**に実行すること。
-既存バケットを使う運用(``.config.yaml`` に名前を書いた場合)はいつ実行してもよい。
-バケットは本スクリプトが作った multipart を中止するだけで、オブジェクトは残さない。
+その場合はノートブックの後始末セルより**前**に実行すること。
+指定したバケットは本スクリプトが作った multipart を中止するだけで、
+オブジェクトも残さない(バケット自体は消さない)。
+
+資格情報は boto3 の既定の解決順(環境変数 / ``AWS_PROFILE`` /
+インスタンスロール)で解決する。コマンドライン引数では受け取らない
+(ps に出るため)。出力の直前にアクセスキーが混ざっていないことを検査する。
 
 ``--dry-run`` を付けると AWS には一切アクセスせず、呼び出し計画だけを印字する。
-
-資格情報はコマンドライン引数では受け取らない(ps に出るため)。出力の直前に
-アクセスキーが混ざっていないことを検査する。
 """
 import argparse
 import json
@@ -195,12 +204,24 @@ def assert_no_credentials(text, access_key=None, secret_key=None):
 def print_plan(args, bucket, region, deny_bucket):
     print('S-6 CompleteMultipartUpload Error Code 採取 — 呼び出し計画 (--dry-run)')
     print()
-    print(f'  bucket           : {bucket or "<E2E_S3_BUCKET 未設定>"}')
+    if args.create_bucket:
+        print('  bucket           : e2e-sigv4-s6-<YYYYmmdd-HHMMSS>'
+              '(--create-bucket で生成し、終了時に空にして削除する)')
+    else:
+        print(f'  bucket           : {bucket or "<E2E_S3_BUCKET 未設定>"}')
     print(f'  region           : {region}')
+    print('  credentials      : boto3 の既定の解決順'
+          '(環境変数 / AWS_PROFILE / インスタンスロール)')
     print(f'  key prefix       : {args.prefix}')
     print(f'  out              : {args.out}')
     print(f'  deny bucket      : {deny_bucket or "(未設定 → access-denied はスキップ)"}')
     print()
+    if args.create_bucket:
+        print('  [create-bucket] 採取用バケットを作る')
+        print('      - create_bucket(Bucket=e2e-sigv4-s6-<YYYYmmdd-HHMMSS>)')
+        print('      # 終了時(例外が出た場合も)に multipart を中止し、'
+              'オブジェクトを消して delete_bucket する')
+        print()
     for name, desc, calls in CASES:
         if name == 'access-denied' and not args.with_access_denied:
             print(f'  [skip] {name}: --with-access-denied が無いためスキップ')
@@ -224,8 +245,9 @@ def print_plan(args, bucket, region, deny_bucket):
 
 
 # ---------------------------------------------------------------------------
-def _client(region, access_key=None, secret_key=None):
-    """S3 クライアント。資格情報を渡さなければ通常の解決順(環境変数など)。
+def _client(region, access_key=None, secret_key=None, session_token=None):
+    """S3 クライアント。資格情報を渡さなければ boto3 の既定の解決順
+    (環境変数 / AWS_PROFILE / インスタンスロール)に任せる。
 
     access_key / secret_key を明示すると、その資格情報だけを使う
     (ケース 8・9 用。壊した資格情報で complete を投げるため)。
@@ -239,8 +261,67 @@ def _client(region, access_key=None, secret_key=None):
     if access_key is not None:
         kwargs['aws_access_key_id'] = access_key
         kwargs['aws_secret_access_key'] = secret_key
-        kwargs['aws_session_token'] = None
+        kwargs['aws_session_token'] = session_token
     return boto3.client('s3', **kwargs)
+
+
+def _resolve_credentials():
+    """既定の解決順で資格情報を解決し、(access_key, secret_key, token) を返す。
+
+    解決した値は「壊した署名を作る」(ケース 9)のと、出力に混ざっていない
+    ことを検査するのにしか使わない。**印字も証跡への書き出しもしない。**
+    解決できなければ 3 つとも None。
+    """
+    import boto3
+    creds = boto3.Session().get_credentials()
+    if creds is None:
+        return None, None, None
+    frozen = creds.get_frozen_credentials()
+    return frozen.access_key, frozen.secret_key, frozen.token
+
+
+def _make_bucket(client, bucket, region):
+    """採取用のバケットを作る。"""
+    kwargs = {'Bucket': bucket}
+    if region != 'us-east-1':
+        # us-east-1 以外は LocationConstraint が要る(us-east-1 は付けると弾かれる)
+        kwargs['CreateBucketConfiguration'] = {'LocationConstraint': region}
+    client.create_bucket(**kwargs)
+
+
+def _drop_bucket(client, bucket):
+    """生成したバケットを空にして削除する。**残骸を残さない。**
+
+    採取の途中で例外が出ても呼ばれる(main の finally)。削除に失敗したら
+    黙らずに、手で消すべきバケット名を標準エラーに出す。
+    """
+    counts = {'aborted_uploads': 0, 'deleted_versions': 0, 'deleted_objects': 0}
+    try:
+        for page in client.get_paginator(
+                'list_multipart_uploads').paginate(Bucket=bucket):
+            for u in page.get('Uploads', []):
+                client.abort_multipart_upload(
+                    Bucket=bucket, Key=u['Key'], UploadId=u['UploadId'])
+                counts['aborted_uploads'] += 1
+        for page in client.get_paginator(
+                'list_object_versions').paginate(Bucket=bucket):
+            for kind in ('Versions', 'DeleteMarkers'):
+                for o in page.get(kind, []):
+                    client.delete_object(Bucket=bucket, Key=o['Key'],
+                                         VersionId=o['VersionId'])
+                    counts['deleted_versions'] += 1
+        for page in client.get_paginator('list_objects_v2').paginate(Bucket=bucket):
+            for o in page.get('Contents', []):
+                client.delete_object(Bucket=bucket, Key=o['Key'])
+                counts['deleted_objects'] += 1
+        client.delete_bucket(Bucket=bucket)
+    except Exception as e:
+        print(f'[!] 生成バケットを削除できなかった: {bucket} '
+              f'({type(e).__name__}: {e})', file=sys.stderr)
+        print('    **手で削除すること。**', file=sys.stderr)
+        return False
+    print(f'生成バケットを削除した: {bucket} {counts}')
+    return True
 
 
 def _break_secret(secret):
@@ -319,7 +400,8 @@ def _cleanup(client, bucket, key, upload_id, obs):
 
 
 def run_cases(client, bucket, deny_bucket, prefix, with_access_denied,
-              region='us-east-1', access_key=None, secret_key=None):
+              region='us-east-1', access_key=None, secret_key=None,
+              session_token=None):
     body_5m = b'0' * MIN_PART_SIZE
     body_1m = b'0' * (1024 * 1024)
     results = []
@@ -457,7 +539,8 @@ def run_cases(client, bucket, deny_bucket, prefix, with_access_denied,
         up = client.create_multipart_upload(Bucket=bucket, Key=key)['UploadId']
         etag = client.upload_part(Bucket=bucket, Key=key, UploadId=up,
                                   PartNumber=1, Body=body_5m)['ETag']
-        bad_sig_client = _client(region, access_key, _break_secret(secret_key))
+        bad_sig_client = _client(region, access_key, _break_secret(secret_key),
+                                 session_token)
         obs = _observe(lambda: bad_sig_client.complete_multipart_upload(
             Bucket=bucket, Key=key, UploadId=up,
             MultipartUpload={'Parts': [{'PartNumber': 1, 'ETag': etag}]}))
@@ -514,7 +597,7 @@ def build_report(results, bucket, region, started_at, skipped):
         'codes_not_in_table': unlisted,
         'note': ('コード側(DEFINITIVE_REJECTION_CODES)は変更していない。'
                  '表に無いコードは WaterButler の既定どおり UNKNOWN として扱う'
-                 '(TEST_SPEC E-1 の合格基準)。'),
+                 '(E-1 の合格基準)。'),
     }
     return report
 
@@ -601,22 +684,29 @@ def main(argv=None):
     parser.add_argument('--with-access-denied', action='store_true',
                         help='access-denied ケースを実施する'
                              '(E2E_S3_DENY_BUCKET が必要)')
+    parser.add_argument('--create-bucket', action='store_true',
+                        help='採取用のバケットを作り、終了時に空にして削除する'
+                             '(E2E_S3_BUCKET は不要)')
     args = parser.parse_args(argv)
 
     bucket = os.environ.get('E2E_S3_BUCKET')
     region = os.environ.get('E2E_S3_REGION', 'us-east-1')
     deny_bucket = os.environ.get('E2E_S3_DENY_BUCKET')
-    access_key = os.environ.get('AWS_ACCESS_KEY_ID')
-    secret_key = os.environ.get('AWS_SECRET_ACCESS_KEY')
 
     if args.dry_run:
         return print_plan(args, bucket, region, deny_bucket)
 
-    missing = [n for n, v in (('AWS_ACCESS_KEY_ID', access_key),
-                              ('AWS_SECRET_ACCESS_KEY', secret_key),
-                              ('E2E_S3_BUCKET', bucket)) if not v]
-    if missing:
-        print('環境変数が足りない: ' + ', '.join(missing), file=sys.stderr)
+    if not bucket and not args.create_bucket:
+        print('バケットが決まらない。E2E_S3_BUCKET を設定するか '
+              '--create-bucket を付けること。', file=sys.stderr)
+        return 2
+
+    # 資格情報は boto3 の既定の解決順に任せる(AWS_PROFILE でもよい)。
+    access_key, secret_key, session_token = _resolve_credentials()
+    if access_key is None:
+        print('資格情報が解決できない。AWS_PROFILE か '
+              'AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY を設定すること。',
+              file=sys.stderr)
         print('(--dry-run なら資格情報なしで呼び出し計画だけ見られる)', file=sys.stderr)
         return 2
 
@@ -626,26 +716,38 @@ def main(argv=None):
     elif not deny_bucket:
         skipped['access-denied'] = 'E2E_S3_DENY_BUCKET が未設定'
 
-    started_at = datetime.now().isoformat()
     client = _client(region)
-    results = run_cases(client, bucket, deny_bucket, args.prefix,
-                        args.with_access_denied,
-                        region=region, access_key=access_key,
-                        secret_key=secret_key)
+    created_bucket = None
+    if args.create_bucket:
+        bucket = 'e2e-sigv4-s6-' + datetime.now().strftime('%Y%m%d-%H%M%S')
+        _make_bucket(client, bucket, region)
+        created_bucket = bucket
+        print(f'採取用バケットを生成した: {bucket} ({region})')
 
-    report = build_report(results, bucket, region, started_at, skipped)
-    text_json = redact(json.dumps(report, indent=2, ensure_ascii=False))
-    text_md = redact(build_markdown(report))
-    assert_no_credentials(text_json, access_key, secret_key)
-    assert_no_credentials(text_md, access_key, secret_key)
+    started_at = datetime.now().isoformat()
+    try:
+        results = run_cases(client, bucket, deny_bucket, args.prefix,
+                            args.with_access_denied,
+                            region=region, access_key=access_key,
+                            secret_key=secret_key, session_token=session_token)
 
-    os.makedirs(args.out, exist_ok=True)
-    path_json = os.path.join(args.out, OUT_JSON)
-    path_md = os.path.join(args.out, OUT_MD)
-    with open(path_json, 'w', encoding='utf-8') as f:
-        f.write(text_json + '\n')
-    with open(path_md, 'w', encoding='utf-8') as f:
-        f.write(text_md + '\n')
+        report = build_report(results, bucket, region, started_at, skipped)
+        text_json = redact(json.dumps(report, indent=2, ensure_ascii=False))
+        text_md = redact(build_markdown(report))
+        assert_no_credentials(text_json, access_key, secret_key)
+        assert_no_credentials(text_md, access_key, secret_key)
+
+        os.makedirs(args.out, exist_ok=True)
+        path_json = os.path.join(args.out, OUT_JSON)
+        path_md = os.path.join(args.out, OUT_MD)
+        with open(path_json, 'w', encoding='utf-8') as f:
+            f.write(text_json + '\n')
+        with open(path_md, 'w', encoding='utf-8') as f:
+            f.write(text_md + '\n')
+    finally:
+        # 採取が途中で落ちても生成バケットは残さない。
+        if created_bucket:
+            _drop_bucket(client, created_bucket)
 
     print(text_md)
     print()
@@ -656,7 +758,7 @@ def main(argv=None):
         print('[!] 表に無いコードを採取した: '
               + ', '.join(report['codes_not_in_table']))
         print('    コードは変更せず、UNKNOWN 既定のまま記録した'
-              '(TEST_SPEC E-1 の合格基準)。')
+              '(E-1 の合格基準)。')
     return 0
 
 

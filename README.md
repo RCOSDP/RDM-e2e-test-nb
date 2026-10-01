@@ -360,7 +360,8 @@ GRDMには、一般的なGUI操作を行うためのユーティリティ関数�
 `テスト手順-管理者機能-S3-機関ストレージ-SigV4回帰.ipynb` は、WaterButler の Amazon S3 プロバイダを SigV4 化した際の回帰試験 (S-0〜S-7) を実施するテスト手順 Notebook です。既存の `テスト手順-管理者機能-S3-機関ストレージ.ipynb` とは別ファイルとして管理し、機関ストレージ登録・大量ファイル一覧・バージョニング削除・サーバ側コピー/移動を確認します。
 試験に使う S3 バケット 3 つ (通常 / バージョニング有効 / ap-northeast-1) は、**既定では Notebook が実行時に生成し、後始末で削除します**。名前は `{bucket_prefix}-{bucket_suffix}-{std,ver,apne1}` (既定 `e2e-sigv4-<YYYYmmdd-HHMMSS>-<4桁乱数>-…`) で、生成セルが `S-0-buckets.json` に記録します。既存のバケットを使う場合は `.config.yaml` に `s3_bucket` / `s3_bucket_versioned` / `s3_bucket_apne1` の 3 つを書いてください。指定したバケットは本試験が置いた残骸だけを消し、バケット自体は削除しません。`s3:CreateBucket` / `s3:PutBucketVersioning` / `s3:DeleteBucket` を含む IAM 権限が必要です (不足時は生成セルが必要な権限一覧を表示して停止します)。
 
-`scripts/s3_complete_error_codes.py` は、CompleteMultipartUpload が AWS S3 から返すエラーコードを採取して WaterButler の判定表と突き合わせる単体スクリプトです (Notebook の S-6 に対応)。`--dry-run` で実行計画のみを表示できます。認証情報は環境変数から読み込み、出力には含めません。対象バケットは環境変数 `E2E_S3_BUCKET` で指定しますが、Notebook がバケットを生成する運用では生成セルが出力する `export E2E_S3_BUCKET=…` / `export E2E_S3_REGION=…` の行をそのまま貼って実行します (Notebook の後始末より前に実行すること)。
+`scripts/s3_complete_error_codes.py` は、CompleteMultipartUpload が AWS S3 から返すエラーコードを採取して WaterButler の判定表と突き合わせる単体スクリプトです (Notebook の S-6 に対応)。`--dry-run` で実行計画のみを表示できます。認証情報は boto3 の既定の解決順 (環境変数 / `AWS_PROFILE` / インスタンスロール) で解決し、出力には含めません。
+対象バケットは `--create-bucket` を付けると `e2e-sigv4-s6-<YYYYmmdd-HHMMSS>` を生成し、**正常終了でも例外でも空にして削除します**。既存のバケットを使う場合は環境変数 `E2E_S3_BUCKET` で指定します。Notebook がバケットを生成する運用では生成セルが出力する `export E2E_S3_BUCKET=…` / `export E2E_S3_REGION=…` の行をそのまま貼って実行します (この場合は Notebook の後始末より前に実行すること)。
 
 ## セキュリティと機密情報の管理
 
