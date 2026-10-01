@@ -75,6 +75,11 @@ async def run_pw(f, last_path=default_last_path, screenshot=True, permissions=No
         try:
             next_page = await f(current_pages[-1])
         except:
+            # 証跡採取より先に主信号を出す。ページが navigating のまま固まると
+            # DOM ダンプもスクリーンショットも待たされるので、後回しにすると
+            # 「何で落ちたのか」が読めないまま採取側の例外だけが残る。
+            print('操作が失敗しました。元の例外は次のとおり。', file=sys.stderr)
+            traceback.print_exc()
             try:
                 await _save_dom(last_path=last_path)
             except Exception:
@@ -84,7 +89,13 @@ async def run_pw(f, last_path=default_last_path, screenshot=True, permissions=No
                 await finish_pw_context(screenshot=screenshot, last_path=last_path)
                 raise
             if screenshot:
-                await _save_screenshot()
+                # 採取に失敗しても握り潰す。ここで例外を上げると
+                # 元の例外が差し替わって失敗理由が消える。
+                try:
+                    await _save_screenshot(last_path=last_path)
+                except Exception:
+                    print('スクリーンショットの取得に失敗しました。', file=sys.stderr)
+                    traceback.print_exc()
             raise
     if next_page is not None:
         current_pages.append(next_page)
@@ -173,7 +184,11 @@ async def _save_screenshot(last_path=None):
     if current_pages is None or len(current_pages) == 0:
         return
     screenshot_path = os.path.join(temp_dir, 'last-screenshot.png')
-    await current_pages[-1].screenshot(path=screenshot_path, full_page=True)
+    # 失敗時の証跡なので全画面である必要はない。full_page=True はページ全体を
+    # スクロールしながら描画するため、ページが固まっていると既定の 30 秒を
+    # 使い切る。短い timeout で撮れるものだけ撮る。
+    await current_pages[-1].screenshot(
+        path=screenshot_path, full_page=False, timeout=10000)
     dest_screenshot_path = os.path.join(last_path or default_last_path, 'last-screenshot.png')
     shutil.copyfile(screenshot_path, dest_screenshot_path)
     print(f'Screenshot: {dest_screenshot_path}')
@@ -199,7 +214,7 @@ async def _save_dom(last_path=None):
         fh.write('\n\n'.join(parts))
     print(f'DOM: {dest_dom_path}')
 
-async def _finish_pw_context(screenshot=False, last_path=None):
+async def _finish_pw_context(screenshot=False, last_path=None, _video_index_offset=0):
     global current_contexts
     if current_contexts is None or len(current_contexts) == 0:
         return
@@ -215,10 +230,14 @@ async def _finish_pw_context(screenshot=False, last_path=None):
             timeout_on_screenshot = True
     if timeout_on_screenshot:
         return
-    current_contexts = current_contexts[::-1]
+    # 処理済みのコンテキストをスタックから外す。close_latest_page():129 と同じ形。
+    # ここが [::-1](反転)だと要素が減らず、末尾の再帰呼び出しが同じコンテキストを
+    # 何度も処理する。実際には rmtree 済みの temp_dir を読みに行って
+    # FileNotFoundError になることで止まっていた。
+    current_contexts = current_contexts[:-1]
     await current_context.close()
     for i, current_page in enumerate(current_pages):
-        index = i + 1
+        index = _video_index_offset + i + 1
         try:
             video_path = await current_page.video.path()
             dest_video_path = os.path.join(last_path or default_last_path, f'video-{index}.webm')
@@ -242,12 +261,19 @@ async def _finish_pw_context(screenshot=False, last_path=None):
         for msg in console_messages:
             f.write(f"{msg['timestamp']:.3f} {msg['url']} [{msg['type']}] {msg['text']}\n")
     print(f'Console: {console_log_path}')
-    shutil.rmtree(temp_dir)
     for page in current_pages:
         await page.close()
-    if len(current_contexts) == 0:
+    if len(current_contexts) > 0:
+        # temp_dir は全コンテキストで共有しており、動画も har.zip もこの下にある。
+        # 残りを処理し終えるまで消さない。video-N.webm の N は通し番号にする
+        # (コンテキストごとに 1 から振り直すと前のコンテキスト分を上書きする)。
+        await _finish_pw_context(
+            screenshot=False,
+            last_path=last_path,
+            _video_index_offset=_video_index_offset + len(current_pages),
+        )
         return
-    await _finish_pw_context(screenshot=False, last_path=last_path)
+    shutil.rmtree(temp_dir)
 
 async def mock_clipboard(page):
     """Mock navigator.clipboard for non-secure contexts."""
