@@ -69,7 +69,7 @@ async def login_as_admin(page, idp_name, idp_username, idp_password, transition_
         # すでにIdP選択済みとみなし、ユーザー名とパスワード入力を試みる
         await _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=transition_timeout)
 
-async def login(page, idp_name, idp_username, idp_password, transition_timeout=30000):
+async def login(page, idp_name, idp_username, idp_password, transition_timeout=30000, after_logout: bool = False):
     if idp_name is None:
         # CASでログイン
         if '/login' not in page.url:
@@ -77,7 +77,7 @@ async def login(page, idp_name, idp_username, idp_password, transition_timeout=3
             await page.locator('//button[text() = "ログイン"]').click()
         await login_cas(page, idp_username, idp_password)
         return
-    
+
     # FakeCASの場合の処理
     if idp_name == 'FakeCAS':
         # FakeCAS(port 8080)でない場合のみサインインボタンをクリック
@@ -85,10 +85,11 @@ async def login(page, idp_name, idp_username, idp_password, transition_timeout=3
             await page.locator('//button[@data-test-sign-in-button]').click()
         await login_fakecas(page, idp_username)
         return
-    
+
     # 通常のIdP選択フロー（GakuNin RDM IdP, Orthrosなど）
     try:
-        await page.locator('//*[@id = "dropdown_img"]').click()
+        idp_dropdown_locator = '//*[@id = "clear_a"]' if after_logout else '//*[@id = "dropdown_img"]'
+        await page.locator(idp_dropdown_locator).click()
 
         # IdPが要素として作成されることを確認
         locator = page.locator(f'//*[@class = "list_idp" and text() = "{idp_name}"]')
@@ -117,7 +118,7 @@ async def logout(page, idp_name, transition_timeout=30000):
         await page.locator('//*[@data-test-ad-logout]').click()
     else:
         await page.locator('//div[@class = "nav-profile-name"]').click()
-        await page.locator('//*[contains(text(), "ログアウト")]').click()
+        await page.get_by_role("link", name="ログアウト").click()
 
     if idp_name == 'FakeCAS':
         await expect(page.locator('//button[@data-test-sign-in-button]')).to_be_visible(timeout=transition_timeout)
@@ -489,45 +490,6 @@ async def verify_property_folder_info(
 
     time.sleep(1)
 
-async def login_after_logout(page, idp_name, idp_username, idp_password, transition_timeout=30000):
-    if idp_name is None:
-        # CASでログイン
-        if '/login' not in page.url:
-            # 現在CAS以外→一旦ログインボタンを押す
-            await page.locator('//button[text() = "ログイン"]').click()
-        await login_cas(page, idp_username, idp_password)
-        return
-    # FakeCASの場合の処理
-    if idp_name == 'FakeCAS':
-        # FakeCAS(port 8080)でない場合のみサインインボタンをクリック
-        if ':8080' not in page.url:
-            await page.locator('//button[@data-test-sign-in-button]').click()
-        await login_fakecas(page, idp_username)
-        return
-    # 通常のIdP選択フロー（GakuNin RDM IdP, Orthrosなど）
-    try:
-        await page.locator('//*[@id = "clear_a"]').click()
-        # IdPが要素として作成されることを確認
-        # locator = page.locator(f'//*[@class = "list_idp" and text() = "{idp_name}"]')
-        locator = page.locator(f'//*[contains(@class, "list_idp") and normalize-space(text())="{idp_name}"]')
-        # locator = page.locator('//*[contains(@class, "list_idp") and normalize-space(text())="GakuNin RDM IdP"]').first
-        await expect(locator).to_be_visible(timeout=transition_timeout)
-        time.sleep(5)
-        await locator.click()
-
-        # 選択ボタンが有効になったことを確認
-        locator_wayf_submit = page.locator('//input[@id = "wayf_submit_button"]')
-        await expect(locator_wayf_submit).to_be_enabled(timeout=transition_timeout)
-        await locator_wayf_submit.click()
-        # アカウント入力欄が編集可能になったことを確認
-        await expect_idp_login(page, idp_name, timeout=transition_timeout)
-        await _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=transition_timeout)
-    except:
-        traceback.print_exc()
-        print('ユーザー名とパスワードによるログインを試みます...')
-        # すでにIdP選択済みとみなし、ユーザー名とパスワード入力を試みる
-        await _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=transition_timeout)
-    
 async def open_wiki(page, wikiname, text, transition_timeout=60000):
     await page.locator(f'//*[contains(@class, "title-text")]//a[text()="{wikiname}"]').click()
     await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)

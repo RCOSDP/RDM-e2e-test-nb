@@ -103,27 +103,23 @@ class TestRunner:
         self.idp_password_project_limit_2 = None
         
         # Mapcore group test parameters
-        self.idp_name_3 = None
         self.idp_username_3 = None
         self.idp_password_3 = None
-        self.idp_name_4 = None
         self.idp_username_4 = None
         self.idp_password_4 = None
-        self.idp_name_5 = None
         self.idp_username_5 = None
         self.idp_password_5 = None
         self.display_username_institutional_admin = None
         self.display_username_1 = None
         self.display_username_2 = None
         self.display_username_3 = None
-        self.display_username_4 = None
-        self.display_username_5 = None
         self.group_a = None
         self.group_b = None
         self.group_c = None
         self.group_d = None
         self.group_search = None
         self.group_note_text = None
+        self.mapcore_group_enabled = False
 
         # Exclude notebooks
         self.exclude_notebooks = []
@@ -658,6 +654,10 @@ class TestRunner:
         """Run Mapcore group tests."""
         print('\n=== Mapcore group Tests ===')
 
+        if not self.mapcore_group_enabled:
+            print('Skipping Mapcore group tests (mapcore_group_enabled=false)')
+            return
+
         self.result_notebooks.append(
             self.run_notebook(
                 '取りまとめ-グループ.ipynb',
@@ -678,8 +678,6 @@ class TestRunner:
                 display_username_1=self.display_username_1,
                 display_username_2=self.display_username_2,
                 display_username_3=self.display_username_3,
-                display_username_4=self.display_username_4,
-                display_username_5=self.display_username_5,
                 group_a=self.group_a,
                 group_b=self.group_b,
                 group_c=self.group_c,

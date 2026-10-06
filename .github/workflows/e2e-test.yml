@@ -1,4 +1,4 @@
-name: E2E Test Execution
+﻿name: E2E Test Execution
 
 on:
   push:
@@ -124,6 +124,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-metadata
             display_name: "User Tests (Metadata)"
             include_admin: false
@@ -139,6 +140,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: admin
             display_name: "Admin Tests"
             include_admin: true
@@ -152,6 +154,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
             exclude_notebooks: |
               テスト手順-管理者機能-ログイン可否設定.ipynb
               テスト手順-管理者機能-ノード管理.ipynb
@@ -195,6 +198,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: migration-from-20250906-weko
             display_name: "Migration Test from 20250906 (WEKO)"
             include_admin: true
@@ -222,6 +226,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-minio
             display_name: "User Tests (MinIO)"
             include_admin: false
@@ -238,6 +243,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -253,6 +259,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-weko-direct
             display_name: "User Tests (WEKO Direct)"
             include_admin: true
@@ -268,6 +275,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-weko-workflow
             display_name: "User Tests (WEKO Workflow)"
             include_admin: true
@@ -283,6 +291,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-jupyterhub
             display_name: "User Tests (JupyterHub)"
             include_admin: false
@@ -297,6 +306,7 @@ jobs:
             jupyterhub_enabled: true
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-workflow-roles
             display_name: "User Tests (Flowable Roles)"
             include_admin: true
@@ -312,6 +322,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: roles
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-workflow-forms
             display_name: "User Tests (Flowable Forms)"
             include_admin: true
@@ -327,6 +338,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: forms
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-workflow-batch
             display_name: "User Tests (Flowable Batch)"
             include_admin: true
@@ -343,6 +355,7 @@ jobs:
             workflow_test_mode: batch
             workflow_batch_project_count: 50
             wiki_enabled: false
+            mapcore_group_enabled: false
           - name: user-wiki
             display_name: "User Tests (Wiki)"
             include_admin: false
@@ -357,6 +370,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: true
+            mapcore_group_enabled: false
           - name: user-metadata-mibyo-db
             display_name: "User Tests (Mibyo DB)"
             include_admin: true
@@ -372,6 +386,22 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            mapcore_group_enabled: false
+          - name: user-mapcore-group
+            display_name: "User Tests (Mapcore Group)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            mibyo_db_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
+            mapcore_group_enabled: true
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
@@ -382,6 +412,7 @@ jobs:
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
       MIBYO_DB_ENABLED: ${{ matrix.test-group.mibyo_db_enabled == true && 'true' || 'false' }}
       WIKI_ENABLED: ${{ (matrix.test-group.wiki_enabled == true || github.event.inputs.enable_wiki == 'true') && 'true' || 'false' }}
+      MAPCORE_GROUP_ENABLED: ${{ matrix.test-group.mapcore_group_enabled == true && 'true' || 'false' }}
       MINIO_ROOT_USER: e2eadmin
       MINIO_ROOT_PASSWORD: e2epassword123
       MINIO_ALIAS: ci-minio
@@ -689,6 +720,7 @@ jobs:
       if: matrix.test-group.migration_from != null
       working-directory: RDM-osf.io
       run: |
+        set -o pipefail
         echo "Creating test data in migration source environment..."
 
         # Setup institutions first (required for setup_test_data.py)
@@ -698,7 +730,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
 
         # Create test data that will be migrated
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
 
         echo "Migration source test data created"
 
@@ -1266,14 +1298,15 @@ jobs:
     - name: Create test users and projects
       working-directory: RDM-osf.io
       run: |
+        set -o pipefail
         # Setup institutions first
         docker-compose run --rm web python3 -m scripts.populate_institutions -e test -a
 
         # Copy the setup script to the container
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
-        
+
         # Execute the script and capture project IDs
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
         
         # Extract project IDs and names from output
         PROJECT_ID_1=$(grep "PROJECT_ID_testuser1@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
@@ -1352,21 +1385,16 @@ jobs:
         idp_password_project_limit_2: 'testpass987'
 
         # Dedicated user for groups tests
-        idp_name_3: 'FakeCAS'
-        idp_username_3: 'testuser3@example.com'
-        idp_password_3: 'testpass321'
-        idp_name_4: 'FakeCAS'
+        idp_username_3: 'testuser6@example.com'
+        idp_password_3: 'testpass666'
         idp_username_4: 'testuser4@example.com'
         idp_password_4: 'testpass654'
-        idp_name_5: 'FakeCAS'
         idp_username_5: 'testuser5@example.com'
         idp_password_5: 'testpass987'
         display_username_institutional_admin: 'Staff'
         display_username_1: 'User 1'
         display_username_2: 'User 2'
-        display_username_3: 'User 3'
-        display_username_4: 'User 4'
-        display_username_5: 'User 5'
+        display_username_3: 'User 6'
         group_a: 'GroupA'
         group_b: 'GroupB'
         group_c: 'GroupC'
@@ -1394,6 +1422,7 @@ jobs:
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
         storages_oauth: []
+        mapcore_group_enabled: ${{ matrix.test-group.mapcore_group_enabled == true }}
         EOF
 
         args=(ci.config.yaml base_ci.config.yaml)
