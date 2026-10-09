@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1
+# minio/minio is no longer published on Docker Hub; build the last release from source.
+FROM golang:1.24-alpine AS build
+ARG MINIO_RELEASE_TAG=RELEASE.2025-10-15T17-29-55Z
+RUN apk add --no-cache git
+RUN git clone --depth 1 --branch "${MINIO_RELEASE_TAG}" https://github.com/minio/minio.git /src
+WORKDIR /src
+RUN CGO_ENABLED=0 go build -trimpath \
+      -ldflags "$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "${MINIO_RELEASE_TAG#RELEASE.}")" \
+      -o /out/minio .
+
+FROM alpine:3.22
+RUN apk add --no-cache ca-certificates curl
+COPY --from=build /out/minio /usr/bin/minio
+ENTRYPOINT ["/usr/bin/minio"]

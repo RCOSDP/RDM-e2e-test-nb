@@ -105,7 +105,78 @@ on:
           - 'false'
 
 jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    outputs:
+      wb_custom: ${{ steps.wb_params.outputs.branch != '' }}
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      with:
+        path: e2e-tests
+
+    - name: Build Elasticsearch image with Kuromoji (amd64)
+      working-directory: e2e-tests
+      run: |
+        docker build -t elasticsearch-kuromoji:amd64 \
+          -f docker/elasticsearch/Dockerfile.amd64 docker/elasticsearch
+        mkdir -p ../prebuilt-images
+        docker save -o ../prebuilt-images/elasticsearch-kuromoji.tar elasticsearch-kuromoji:amd64
+
+    - name: Build MinIO images from source
+      working-directory: e2e-tests
+      run: |
+        docker build -t minio-source:local -f docker/minio/Dockerfile.minio docker/minio
+        docker build -t minio-mc-source:local -f docker/minio/Dockerfile.mc docker/minio
+        docker save -o ../prebuilt-images/minio.tar minio-source:local minio-mc-source:local
+
+    - name: Parse WaterButler parameters
+      id: wb_params
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
+          echo "repository=$(grep -oP '^-\s*WB_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+          echo "branch=$(grep -oP '^-\s*WB_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+        else
+          echo "repository=${{ github.event.inputs.wb_repository }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.event.inputs.wb_branch }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build custom WaterButler image
+      if: steps.wb_params.outputs.branch != ''
+      run: |
+        WB_REPO="${{ steps.wb_params.outputs.repository || 'RCOSDP/RDM-waterbutler' }}"
+        WB_BRANCH="${{ steps.wb_params.outputs.branch }}"
+        WB_BASE_BRANCH="develop"
+
+        echo "Building custom WaterButler image from ${WB_REPO}@${WB_BRANCH}"
+
+        # Clone base branch
+        git clone --depth=50 -b "$WB_BASE_BRANCH" "https://github.com/${WB_REPO}.git" RDM-waterbutler
+        cd RDM-waterbutler
+
+        # Merge custom branch
+        git fetch origin "$WB_BRANCH"
+        git config user.name "github-actions[bot]"
+        git config user.email "RDM-e2e-test-nb@example.com"
+        git merge --no-ff FETCH_HEAD -m "Merge ${WB_BRANCH} for E2E tests"
+
+        # Build Docker image
+        docker build -t rdm-waterbutler:custom .
+        cd ..
+        docker save -o prebuilt-images/rdm-waterbutler-custom.tar rdm-waterbutler:custom
+
+    - name: Upload prebuilt images
+      uses: actions/upload-artifact@v4
+      with:
+        name: prebuilt-images
+        path: prebuilt-images/
+        retention-days: 7
+
   e2e-test:
+    needs: build-images
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -632,12 +703,28 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build Elasticsearch image with Kuromoji (amd64)
-      working-directory: e2e-tests
+    - name: Download prebuilt images
+      uses: actions/download-artifact@v4
+      with:
+        name: prebuilt-images
+        path: prebuilt-images
+
+    - name: Load prebuilt images
       run: |
-        docker build -t elasticsearch-kuromoji:amd64 \
-          -f docker/elasticsearch/Dockerfile.amd64 docker/elasticsearch
+        docker load -i prebuilt-images/elasticsearch-kuromoji.tar
         echo "ELASTICSEARCH_IMAGE=elasticsearch-kuromoji:amd64" >> "$GITHUB_ENV"
+
+        if [ "${MINIO_ENABLED}" = "true" ]; then
+          docker load -i prebuilt-images/minio.tar
+          echo "MINIO_IMAGE=minio-source:local" >> "$GITHUB_ENV"
+          echo "MINIO_MC_IMAGE=minio-mc-source:local" >> "$GITHUB_ENV"
+        fi
+
+        if [ "${{ needs.build-images.outputs.wb_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/rdm-waterbutler-custom.tar
+          echo "WB_IMAGE=rdm-waterbutler:custom" >> "$GITHUB_ENV"
+        fi
+        rm -rf prebuilt-images
 
     - name: Install Docker Compose
       run: |
@@ -807,9 +894,6 @@ jobs:
           cat > /tmp/pr_body.txt << 'EOF'
         ${{ github.event.pull_request.body }}
         EOF
-          echo "WB_CUSTOM_REPO=$(grep -oP '^-\s*WB_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_ENV
-          echo "WB_CUSTOM_BRANCH=$(grep -oP '^-\s*WB_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_ENV
-
           # Wiki parameters from PR body
           WIKI_ENABLED_OVERRIDE=$(grep -oP '^-\s*WIKI_ENABLED:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' | tr '[:upper:]' '[:lower:]' || true)
           WIKI_REPO_OVERRIDE=$(grep -oP '^-\s*WIKI_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
@@ -828,40 +912,11 @@ jobs:
           echo "Y_WEBSOCKET_CUSTOM_REPO=${Y_WEBSOCKET_REPO_OVERRIDE}" >> $GITHUB_ENV
           echo "Y_WEBSOCKET_CUSTOM_BRANCH=${Y_WEBSOCKET_BRANCH_OVERRIDE}" >> $GITHUB_ENV
         else
-          echo "WB_CUSTOM_REPO=${{ github.event.inputs.wb_repository }}" >> $GITHUB_ENV
-          echo "WB_CUSTOM_BRANCH=${{ github.event.inputs.wb_branch }}" >> $GITHUB_ENV
           echo "WIKI_CUSTOM_REPO=${{ github.event.inputs.wiki_repository }}" >> $GITHUB_ENV
           echo "WIKI_CUSTOM_BRANCH=${{ github.event.inputs.wiki_branch }}" >> $GITHUB_ENV
           echo "Y_WEBSOCKET_CUSTOM_REPO=${{ github.event.inputs.y_websocket_repository }}" >> $GITHUB_ENV
           echo "Y_WEBSOCKET_CUSTOM_BRANCH=${{ github.event.inputs.y_websocket_branch }}" >> $GITHUB_ENV
         fi
-
-    - name: Build custom WaterButler image
-      if: env.WB_CUSTOM_BRANCH != ''
-      run: |
-        WB_REPO="${WB_CUSTOM_REPO:-RCOSDP/RDM-waterbutler}"
-        WB_BRANCH="${WB_CUSTOM_BRANCH}"
-        WB_BASE_BRANCH="develop"
-
-        echo "Building custom WaterButler image from ${WB_REPO}@${WB_BRANCH}"
-
-        # Clone base branch
-        git clone --depth=50 -b "$WB_BASE_BRANCH" "https://github.com/${WB_REPO}.git" RDM-waterbutler
-        cd RDM-waterbutler
-
-        # Merge custom branch
-        git fetch origin "$WB_BRANCH"
-        git config user.name "github-actions[bot]"
-        git config user.email "RDM-e2e-test-nb@example.com"
-        git merge --no-ff FETCH_HEAD -m "Merge ${WB_BRANCH} for E2E tests"
-
-        # Build Docker image
-        docker build -t rdm-waterbutler:custom .
-        cd ..
-
-        # Override WB_IMAGE for subsequent steps
-        echo "WB_IMAGE=rdm-waterbutler:custom" >> $GITHUB_ENV
-        echo "Custom WaterButler image built successfully"
 
     - name: Build Wiki bundle and OSF image
       if: env.WIKI_ENABLED == 'true'
