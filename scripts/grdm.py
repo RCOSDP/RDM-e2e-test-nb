@@ -133,6 +133,38 @@ async def expect_anonymous_toppage(page, idp_name, transition_timeout=30000):
     else:
         await expect(page.locator('#wayf_submit_button')).to_be_visible(timeout=transition_timeout)
 
+def assert_not_production_url(*urls, forbidden_patterns):
+    """実行対象URLが本番相当のパターンに一致しないことを確認し、誤った環境でのGDPR delete等を防ぐ。"""
+    # 文字列を渡すと1文字ずつ走査され、意図しない一致判定になるため、型を明示的に検査する
+    assert isinstance(forbidden_patterns, (list, tuple)), (
+        f'forbidden_patterns はリスト(またはタプル)で指定してください。'
+        f'1件のみの場合も ["..."] の形式で指定すること (指定値: {forbidden_patterns!r})'
+    )
+    assert forbidden_patterns, (
+        'forbidden_patterns が空です。本番相当のURLパターンを1つ以上指定してください。'
+    )
+    assert all(isinstance(pattern, str) and pattern for pattern in forbidden_patterns), (
+        f'forbidden_patterns の要素は空でない文字列で指定してください (指定値: {forbidden_patterns!r})'
+    )
+    for url in urls:
+        if not url:
+            continue
+        for pattern in forbidden_patterns:
+            assert pattern not in url, (
+                f'このテストは本番相当の環境では実行できません '
+                f'(forbidden pattern: {pattern!r}, url: {url!r})'
+            )
+
+async def assert_user_detail_matches(page, *, email=None, transition_timeout=30000):
+    """ユーザ詳細画面の「ユーザ名」欄を確認し、GDPR delete等での対象取り違えを防ぐ。"""
+    # 照合条件が無いまま呼ばれると「確認済み」と誤認されるため、条件の指定を必須とする
+    assert email is not None, (
+        'assert_user_detail_matches に照合条件が指定されていません。'
+        '対象の取り違えを防ぐためのチェックのため、email を必ず指定してください。'
+    )
+    username_value = page.locator('//tr[td[1][normalize-space()="ユーザ名"]]/td[2]')
+    await expect(username_value).to_have_text(email, timeout=transition_timeout)
+
 async def _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=30000):
     login_proc = _login_handlers[idp_name]
     await login_proc(page, idp_username, idp_password, transition_timeout)
