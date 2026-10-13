@@ -74,6 +74,8 @@ class TestRunner:
         self.gateway_base_url = None
         # Wiki specific parameters
         self.wiki_enabled = False
+        # Member display specific parameters
+        self.member_display_enabled = False
         # Workflow admin user parameters
         self.idp_name_integrated_admin = None
         self.idp_username_integrated_admin = None
@@ -629,6 +631,24 @@ class TestRunner:
                 exclude_notebooks=self.exclude_notebooks,
             )
         )
+
+    def run_member_display_tests(self):
+        """Run member display (contributors screen) tests."""
+        print('\n=== Member Display Tests ===')
+        if not self.member_display_enabled:
+            print('Skipping Member Display tests (member_display_enabled=false)')
+            return
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                'テスト手順-画面表示-メンバー表示機能.ipynb',
+                idp_user_display_name_1=getattr(self, 'idp_user_display_name_1', None),
+                idp_name_2=getattr(self, 'idp_name_2', None),
+                idp_username_2=getattr(self, 'idp_username_2', None),
+                idp_user_display_name_2=getattr(self, 'idp_user_display_name_2', None),
+                idp_password_2=getattr(self, 'idp_password_2', None),
+            )
+        )
             
 
     def check_notebook_errors(self, notebook_path):
@@ -736,6 +756,7 @@ class TestRunner:
         self.run_mibyo_db_tests()
         self.run_workflow_tests()
         self.run_wiki_tests()
+        self.run_member_display_tests()
 
         result_notebooks = [result_notebook for result_notebook in self.result_notebooks if result_notebook is not None]
         
