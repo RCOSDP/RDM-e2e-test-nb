@@ -4,6 +4,7 @@ from osf.models import OSFUser, Node, Institution
 
 WIKI_ENABLED = os.environ.get('WIKI_ENABLED', 'false').lower() == 'true'
 MAPCORE_GROUP_ENABLED = os.environ.get('MAPCORE_GROUP_ENABLED', 'false').lower() == 'true'
+SHIBBOLETH_ENABLED = os.environ.get('SHIBBOLETH_ENABLED', 'false').lower() == 'true'
 
 INSTITUTION_NAME = 'Virginia Tech [Test]'
 
@@ -81,6 +82,20 @@ test_users = [
     },
 ]
 
+if SHIBBOLETH_ENABLED:
+    INSTITUTION_NAME = 'RDM E2E Institution'
+    Institution.objects.create(
+        _id='e2esh', name=INSTITUTION_NAME, domains=['e2e.test'],
+        logo_name='e2esh-shield.png',
+        email_domains=['example.com'], delegation_protocol='saml-shib',
+        login_url='http://192.168.168.167:18088/Shibboleth.sso/Login',
+    )
+    test_users = test_users[:3]
+    for user_data in test_users:
+        # Staff privileges must come from the IdP entitlement at login.
+        user_data['is_superuser'] = False
+        user_data['is_staff'] = False
+
 def create_rdmuserkey(user):
     # このスクリプトは `manage.py shell < file` で exec されるため、
     # 関数内で使うシンボルは関数内で import する（トップレベル import は関数から見えない）
@@ -132,6 +147,8 @@ for user_data in test_users:
             date_registered=timezone.now()
         )
         user.set_password(user_data['password'])
+        if SHIBBOLETH_ENABLED:
+            user.eppn = username.split('@')[0] + '@e2e.test'
         user.save()
         # Set additional fields after save
         user.is_registered = True
@@ -165,8 +182,8 @@ for user_data in test_users:
         user.emails.create(address=username)
         print(f"Created test user: {username}")
         
-        # Create user key (only needed when Wiki is enabled)
-        if WIKI_ENABLED:
+        # Federated login checks for an existing user key before allowing access.
+        if WIKI_ENABLED or SHIBBOLETH_ENABLED:
             create_rdmuserkey(user)
         
         # Skip project creation for dedicated CI users (e.g. project limit test user)

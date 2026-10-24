@@ -13,6 +13,12 @@
 - OSF_IMAGE: 
 - EMBER_IMAGE: 
 - CAS_IMAGE: 
+<!-- CAS_IMAGE specifies real CAS, not FakeCAS, and takes precedence over CAS source settings. -->
+- CAS_REPOSITORY:
+- CAS_BRANCH:
+- SP_REPOSITORY:
+- SP_BRANCH:
+<!-- CAS/SP source settings apply to Shibboleth login tests; blank values use RCOSDP/RDM-cas-overlay@develop and RCOSDP/RDM-Shibboleth-SP@main. -->
 - MFR_IMAGE: 
 - WB_IMAGE:
 - EXCLUDE_NOTEBOOKS: 

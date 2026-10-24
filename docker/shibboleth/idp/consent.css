@@ -1,0 +1,16 @@
+/* Existing login procedures operate the native consent radio buttons. */
+input[name="_shib_idp_consentOptions"] {
+  position: static;
+  opacity: 1;
+  height: auto;
+  width: auto;
+}
+
+input[name="_shib_idp_consentOptions"] + label {
+  padding-left: 0;
+}
+
+input[name="_shib_idp_consentOptions"] + label::before,
+input[name="_shib_idp_consentOptions"] + label::after {
+  content: none;
+}

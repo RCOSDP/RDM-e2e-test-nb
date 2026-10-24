@@ -32,9 +32,25 @@ on:
         required: false
         default: ''
       cas_image:
-        description: 'Custom CAS image (default: niicloudoperation/rdm-cas-overlay:latest)'
+        description: 'Real CAS image; overrides CAS source settings for Shibboleth tests (not FakeCAS)'
         required: false
         default: ''
+      cas_repository:
+        description: 'CAS source repository for Shibboleth login tests'
+        required: false
+        default: 'RCOSDP/RDM-cas-overlay'
+      cas_branch:
+        description: 'CAS source ref for Shibboleth login tests'
+        required: false
+        default: 'develop'
+      sp_repository:
+        description: 'Shibboleth SP source repository'
+        required: false
+        default: 'RCOSDP/RDM-Shibboleth-SP'
+      sp_branch:
+        description: 'Shibboleth SP source ref'
+        required: false
+        default: 'main'
       mfr_image:
         description: 'Custom MFR image (default: niicloudoperation/rdm-modular-file-renderer:latest)'
         required: false
@@ -109,6 +125,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       wb_custom: ${{ steps.wb_params.outputs.branch != '' }}
+      shibboleth_cas_image: ${{ steps.shibboleth_params.outputs.cas_image || 'rdm-cas:shibboleth' }}
     steps:
     - name: Checkout test repository
       uses: actions/checkout@v4
@@ -167,6 +184,79 @@ jobs:
         docker build -t rdm-waterbutler:custom .
         cd ..
         docker save -o prebuilt-images/rdm-waterbutler-custom.tar rdm-waterbutler:custom
+
+    - name: Parse Shibboleth source parameters
+      id: shibboleth_params
+      run: |
+        python3 - <<'PY'
+        import json
+        import os
+        import re
+
+        with open(os.environ['GITHUB_EVENT_PATH']) as source:
+            event = json.load(source)
+        if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
+            parameters = dict(re.findall(
+                r'^-[ \t]*(CAS_IMAGE|CAS_REPOSITORY|CAS_BRANCH|SP_REPOSITORY|SP_BRANCH):[ \t]*([^\r\n]*)',
+                event['pull_request']['body'] or '', re.MULTILINE))
+        elif os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch':
+            parameters = {key.upper(): value for key, value in event['inputs'].items()}
+        else:
+            parameters = {}
+        defaults = {
+            'CAS_IMAGE': '',
+            'CAS_REPOSITORY': 'RCOSDP/RDM-cas-overlay',
+            'CAS_BRANCH': 'develop',
+            'SP_REPOSITORY': 'RCOSDP/RDM-Shibboleth-SP',
+            'SP_BRANCH': 'main',
+        }
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            for key, default in defaults.items():
+                value = parameters.get(key, '').strip() or default
+                print(f'{key.lower()}={value}', file=output)
+        PY
+
+    - name: Checkout CAS source
+      if: steps.shibboleth_params.outputs.cas_image == ''
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.shibboleth_params.outputs.cas_repository }}
+        ref: ${{ steps.shibboleth_params.outputs.cas_branch }}
+        path: RDM-cas-overlay
+
+    - name: Checkout Shibboleth SP source
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.shibboleth_params.outputs.sp_repository }}
+        ref: ${{ steps.shibboleth_params.outputs.sp_branch }}
+        path: RDM-Shibboleth-SP
+
+    - name: Build Shibboleth authentication images
+      env:
+        CAS_IMAGE: ${{ steps.shibboleth_params.outputs.cas_image }}
+        CAS_REPOSITORY: ${{ steps.shibboleth_params.outputs.cas_repository }}
+        SP_REPOSITORY: ${{ steps.shibboleth_params.outputs.sp_repository }}
+      run: |
+        mkdir -p shibboleth-images
+        images=(rdm-sp:shibboleth rdm-idp:shibboleth)
+        if [[ -n "$CAS_IMAGE" ]]; then
+          printf 'CAS_IMAGE=%s\n' "$CAS_IMAGE" > shibboleth-images/revisions.txt
+        else
+          docker build --target dist -t rdm-cas:shibboleth RDM-cas-overlay
+          images+=(rdm-cas:shibboleth)
+          printf 'CAS_SOURCE=%s@%s\n' "$CAS_REPOSITORY" "$(git -C RDM-cas-overlay rev-parse HEAD)" > shibboleth-images/revisions.txt
+        fi
+        docker build -t rdm-sp:shibboleth RDM-Shibboleth-SP
+        docker build -t rdm-idp:shibboleth e2e-tests/docker/shibboleth/idp
+        docker save -o shibboleth-images/authentication.tar "${images[@]}"
+        printf 'SP_SOURCE=%s@%s\n' "$SP_REPOSITORY" "$(git -C RDM-Shibboleth-SP rev-parse HEAD)" >> shibboleth-images/revisions.txt
+
+    - name: Upload Shibboleth authentication images
+      uses: actions/upload-artifact@v4
+      with:
+        name: shibboleth-images
+        path: shibboleth-images/
+        retention-days: 7
 
     - name: Upload prebuilt images
       uses: actions/upload-artifact@v4
@@ -238,6 +328,44 @@ jobs:
               テスト手順-管理者機能-アナウンス.ipynb
               テスト手順-管理者機能-証跡管理.ipynb
               テスト手順-管理者機能-NIIストレージのクォータ.ipynb
+          - name: user-shibboleth
+            display_name: "User Login (Shibboleth)"
+            shibboleth_enabled: true
+            shibboleth_role: user
+            include_admin: true
+            skip_admin: true
+            skip_login: false
+            skip_metadata: true
+            skip_default_storage: true
+            skip_autofill: true
+            exclude_notebooks: |
+              テスト手順-未ログイン.ipynb
+          - name: admin-shibboleth
+            display_name: "Admin Login (Shibboleth)"
+            shibboleth_enabled: true
+            shibboleth_role: admin
+            include_admin: true
+            skip_admin: false
+            skip_login: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_autofill: true
+            exclude_notebooks: |
+              テスト手順-管理者機能-未ログイン.ipynb
+              テスト手順-管理者機能-ログイン可否設定.ipynb
+              テスト手順-管理者機能-ノード管理.ipynb
+              テスト手順-管理者機能-ユーザ管理.ipynb
+              テスト手順-管理者機能-機関設定.ipynb
+              テスト手順-管理者機能-RDMユーザメール.ipynb
+              テスト手順-管理者機能-RDM登録.ipynb
+              テスト手順-管理者機能-メンテナンスアラート.ipynb
+              テスト手順-管理者機能-アドオン利用制御.ipynb
+              テスト手順-管理者機能-利用統計.ipynb
+              テスト手順-管理者機能-アナウンス.ipynb
+              テスト手順-管理者機能-証跡管理.ipynb
+              テスト手順-管理者機能-NIIストレージのクォータ.ipynb
+              テスト手順-管理者機能-機関ストレージのクォータ.ipynb
+              取りまとめ-管理者機能-プロジェクト制限数.ipynb
           - name: migration-from-20250906
             display_name: "Migration Test from 20250906"
             include_admin: true
@@ -475,6 +603,8 @@ jobs:
             mapcore_group_enabled: true
     name: E2E ${{ matrix.test-group.display_name }}
     env:
+      SHIBBOLETH_ENABLED: ${{ matrix.test-group.shibboleth_enabled == true && 'true' || 'false' }}
+      SHIBBOLETH_ROLE: ${{ matrix.test-group.shibboleth_role }}
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
@@ -725,6 +855,21 @@ jobs:
           echo "WB_IMAGE=rdm-waterbutler:custom" >> "$GITHUB_ENV"
         fi
         rm -rf prebuilt-images
+
+    - name: Download Shibboleth authentication images
+      if: env.SHIBBOLETH_ENABLED == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: shibboleth-images
+        path: shibboleth-images
+
+    - name: Load Shibboleth authentication images
+      if: env.SHIBBOLETH_ENABLED == 'true'
+      run: |
+        docker load -i shibboleth-images/authentication.tar
+        mkdir -p e2e-tests/result
+        mv shibboleth-images/revisions.txt e2e-tests/result/authentication-revisions.txt
+        rm -r shibboleth-images
 
     - name: Install Docker Compose
       run: |
@@ -1065,6 +1210,13 @@ jobs:
         source ${{ github.workspace }}/e2e-tests/.github/scripts/setup_rdm.sh
         create_docker_override
 
+    - name: Configure Shibboleth authentication
+      if: env.SHIBBOLETH_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      env:
+        SHIBBOLETH_CAS_IMAGE: ${{ needs.build-images.outputs.shibboleth_cas_image }}
+      run: python3 ../e2e-tests/.github/scripts/setup_shibboleth.py configure . --cas-image "$SHIBBOLETH_CAS_IMAGE"
+
     - name: Install RDM requirements
       working-directory: RDM-osf.io
       run: |
@@ -1361,7 +1513,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
 
         # Execute the script and capture project IDs
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" -e SHIBBOLETH_ENABLED="${SHIBBOLETH_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
         
         # Extract project IDs and names from output
         PROJECT_ID_1=$(grep "PROJECT_ID_testuser1@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
@@ -1481,6 +1633,9 @@ jobs:
         EOF
 
         args=(ci.config.yaml base_ci.config.yaml)
+        if [ "${SHIBBOLETH_ENABLED}" = "true" ]; then
+          args+=(--shibboleth)
+        fi
         if [ "${MINIO_ENABLED}" = "true" ]; then
           args+=(--minio)
         fi
@@ -1499,7 +1654,7 @@ jobs:
         if [ "${S3COMPATSIGV4_INST_ENABLED}" = "true" ]; then
           args+=(--s3compatsigv4-inst)
         fi
-        if [ "${WIKI_ENABLED}" = "true" ]; then
+        if [ "${WIKI_ENABLED}" = "true" ] && [ "${SHIBBOLETH_ENABLED}" != "true" ]; then
           args+=(--wiki)
         fi
 

@@ -72,6 +72,12 @@ async def run_pw(f, last_path=default_last_path, screenshot=True, permissions=No
             "type": msg.type,
             "text": msg.text
         }))
+        page.on("pageerror", lambda error: console_messages.append({
+            "timestamp": time.time(),
+            "url": page.url,
+            "type": "pageerror",
+            "text": str(error)
+        }))
         current_pages.append(page)
 
     current_time = time.time()
@@ -214,7 +220,6 @@ async def _finish_pw_context(screenshot=False, last_path=None):
     if current_contexts is None or len(current_contexts) == 0:
         return
     current_context, current_pages = current_contexts[-1]
-    current_contexts = current_contexts[:-1]
     os.makedirs(last_path or default_last_path, exist_ok=True)
     timeout_on_screenshot = False
     if screenshot and current_pages is not None and len(current_pages) > 0:
@@ -226,6 +231,7 @@ async def _finish_pw_context(screenshot=False, last_path=None):
             timeout_on_screenshot = True
     if timeout_on_screenshot:
         return
+    current_contexts = current_contexts[:-1]
     pages = list(current_pages)
     for page in pages:
         if not page.is_closed():

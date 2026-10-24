@@ -83,6 +83,10 @@ start_rdm_services() {
         export SERVICES="mfr wb fakecas sharejs wb_worker worker web api ember_osf_web"
     fi
 
+    if [ "${SHIBBOLETH_ENABLED:-false}" = "true" ]; then
+        SERVICES="${SERVICES/fakecas/cas idp}"
+    fi
+
     SERVICES="kaken_elasticsearch $SERVICES"
     
     if [ "${MINIO_ENABLED:-false}" = "true" ]; then
@@ -98,6 +102,14 @@ start_rdm_services() {
     echo "Waiting for Ember build to complete..."
     local timeout="${TIMEOUT:-600}"  # Default 10 minutes
     SERVICE="ember_osf_web" PATTERN="Build successful.*Serving on http://0.0.0.0:4200/" TIMEOUT="$timeout" check_service_logs
+
+    if [ "${SHIBBOLETH_ENABLED:-false}" = "true" ]; then
+        SERVICE_NAME=IdP CHECK_COMMAND='docker-compose exec -T idp curl -fsS http://localhost:8080/idp/status' wait_for_service
+        python3 "${SCRIPT_DIR}/setup_shibboleth.py" idp-metadata "$PWD"
+        docker-compose up -d shibboleth_sp
+        SERVICE_NAME=SP CHECK_COMMAND='curl -fsS http://192.168.168.167:18088/Shibboleth.sso/Metadata' wait_for_service
+        SERVICE_NAME=CAS CHECK_COMMAND='curl -fsS http://localhost:8080/status' wait_for_service
+    fi
 }
 
 # Function to test RDM endpoints
@@ -110,7 +122,11 @@ test_rdm_endpoints() {
     ENDPOINT_NAME="Ember OSF Web (port 4200)" ENDPOINT_URL="http://localhost:4200/" test_endpoint
     ENDPOINT_NAME="WaterButler (port 7777)" ENDPOINT_URL="http://192.168.168.167:7777/status" test_endpoint
     ENDPOINT_NAME="MFR (port 7778)" ENDPOINT_URL="http://localhost:7778/status" test_endpoint
-    ENDPOINT_NAME="FakeCAS (port 8080)" ENDPOINT_URL="http://localhost:8080/login" test_endpoint
+    if [ "${SHIBBOLETH_ENABLED:-false}" = "true" ]; then
+        ENDPOINT_NAME="CAS (port 8080)" ENDPOINT_URL="http://localhost:8080/status" test_endpoint
+    else
+        ENDPOINT_NAME="FakeCAS (port 8080)" ENDPOINT_URL="http://localhost:8080/login" test_endpoint
+    fi
 
     # Test admin endpoint if admin is enabled
     if [ "$include_admin" = "true" ]; then

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <title>RDM E2E - 所属機関の選択</title>
+</head>
+<body>
+    <h1>所属機関の選択</h1>
+    <script src="config.js"></script>
+    <script>
+        const discoveryReturn = new URL(new URLSearchParams(location.search).get('return'));
+        wayf_return_url = discoveryReturn.searchParams.get('target');
+        discoveryReturn.searchParams.delete('target');
+        wayf_sp_samlDSURL = discoveryReturn.href;
+    </script>
+    <script src="https://ds.gakunin.nii.ac.jp/WAYF/embedded-wayf.js"></script>
+</body>
+</html>

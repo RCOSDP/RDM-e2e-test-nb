@@ -1,0 +1,16 @@
+<SPConfig xmlns="urn:mace:shibboleth:3.0:native:sp:config" clockSkew="180">
+    <ApplicationDefaults entityID="http://192.168.168.167:18088/shibboleth" REMOTE_USER="eppn">
+        <Sessions lifetime="3600" timeout="600" relayState="ss:mem" handlerSSL="false" cookieProps="http" redirectLimit="exact">
+            <SSO discoveryProtocol="SAMLDS" discoveryURL="http://192.168.168.167:18088/discovery/">SAML2</SSO>
+            <Logout>SAML2 Local</Logout>
+            <Handler type="MetadataGenerator" Location="/Metadata" signing="false" />
+            <Handler type="Status" Location="/Status" acl="127.0.0.1 ::1" />
+        </Sessions>
+        <MetadataProvider type="XML" path="/exchange/idp-metadata.xml" />
+        <AttributeExtractor type="XML" validate="true" path="/etc/shibboleth/attribute-map.xml" />
+        <AttributeFilter type="XML" validate="true" path="attribute-policy.xml" />
+        <CredentialResolver type="File" key="/exchange/sp-key.pem" certificate="/exchange/sp-cert.pem" />
+    </ApplicationDefaults>
+    <SecurityPolicyProvider type="XML" validate="true" path="security-policy.xml" />
+    <ProtocolProvider type="XML" validate="true" path="protocols.xml" />
+</SPConfig>
