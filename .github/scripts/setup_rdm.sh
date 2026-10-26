@@ -515,6 +515,17 @@ EOL
     echo "" >> .docker-compose.wb.env
     echo "SERVER_CONFIG_DOMAIN=http://192.168.168.167:7777" >> .docker-compose.wb.env
 
+    # The RDM-osf.io env file enables the MFR local-development rewrite, which points the
+    # file URLs embedded in rendered previews (PDF, video, ...) at localhost:7777 and drops
+    # the mode parameter. The E2E browser is logged in on 192.168.168.167, so those
+    # requests would reach WaterButler without the session cookie and fail with 401.
+    sed -i.bak 's/^EXTENSION_CONFIG_LOCAL_DEVELOPMENT=.*/EXTENSION_CONFIG_LOCAL_DEVELOPMENT=0/' .docker-compose.mfr.env
+    rm -f .docker-compose.mfr.env.bak
+    if ! grep -q '^EXTENSION_CONFIG_LOCAL_DEVELOPMENT=0$' .docker-compose.mfr.env; then
+        echo "EXTENSION_CONFIG_LOCAL_DEVELOPMENT could not be disabled in .docker-compose.mfr.env" >&2
+        return 1
+    fi
+
     if [ -n "$mfr_env_additions" ]; then
         printf '%s\n' "$mfr_env_additions" >> .docker-compose.mfr.env
     fi
