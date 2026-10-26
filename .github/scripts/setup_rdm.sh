@@ -89,6 +89,14 @@ start_rdm_services() {
         SERVICES="$SERVICES minio"
     fi
 
+    # An MFR image with legacy dependencies converts office documents through the unoconv
+    # listener defined in the RDM-osf.io compose file, so it is started where previews are
+    # tested. An image with bundled dependencies brings its own conversion services
+    # (mfr_worker, unoserver) through the override instead.
+    if [ "${MFR_PREVIEW_ENABLED:-false}" = "true" ] && [ "${MFR_LAYOUT:-legacy}" = "legacy" ]; then
+        SERVICES="$SERVICES unoconv"
+    fi
+
     echo "Starting services: $SERVICES"
     
     # Use start_services function

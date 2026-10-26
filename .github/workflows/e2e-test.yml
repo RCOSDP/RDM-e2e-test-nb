@@ -327,6 +327,7 @@ jobs:
             skip_admin: true
             skip_metadata: false
             skip_autofill: true
+            mfr_preview_enabled: true
             minio_enabled: false
             weko_enabled: false
             mibyo_db_enabled: false
@@ -1245,6 +1246,8 @@ jobs:
       run: |
         source ${{ github.workspace }}/e2e-tests/.github/scripts/setup_rdm.sh
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
+        export MFR_LAYOUT="${{ needs.build-images.outputs.mfr_layout }}"
+        export MFR_PREVIEW_ENABLED=${{ matrix.test-group.mfr_preview_enabled == true }}
         start_rdm_services
 
     - name: Register OAuth scopes
@@ -1610,6 +1613,7 @@ jobs:
         skip_failed_test: true  # Continue on failure
         transition_timeout: 60000
         skip_preview_check: true
+        mfr_preview_enabled: ${{ matrix.test-group.mfr_preview_enabled == true }}
         skip_130mb_upload: ${{ matrix.test-group.skip_130mb_upload || false }}
         skip_default_storage: ${{ matrix.test-group.skip_default_storage || false }}
         skip_metadata: ${{ matrix.test-group.skip_metadata }}
