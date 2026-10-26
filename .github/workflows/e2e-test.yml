@@ -39,6 +39,18 @@ on:
         description: 'Custom MFR image (default: niicloudoperation/rdm-modular-file-renderer:latest)'
         required: false
         default: ''
+      mfr_repository:
+        description: 'RDM-modular-file-renderer repository (default: RCOSDP/RDM-modular-file-renderer)'
+        required: false
+        default: ''
+      mfr_branch:
+        description: 'RDM-modular-file-renderer branch to build and test against'
+        required: false
+        default: ''
+      unoserver_image:
+        description: 'unoserver image for an MFR image that bundles its dependencies (default: built from the MFR sources; ignored when mfr_branch is given). How the MFR and WaterButler images carry their dependencies is detected from the images'
+        required: false
+        default: ''
       wb_image:
         description: 'Custom WaterButler image (default: niicloudoperation/rdm-waterbutler:latest)'
         required: false
@@ -113,6 +125,11 @@ jobs:
       wb_layout: ${{ steps.wb_layout.outputs.layout }}
       wb_libdir: ${{ steps.wb_layout.outputs.libdir }}
       mfr_image: ${{ steps.mfr_params.outputs.image }}
+      mfr_custom: ${{ steps.mfr_params.outputs.branch != '' }}
+      mfr_layout: ${{ steps.mfr_layout.outputs.layout }}
+      mfr_libdir: ${{ steps.mfr_layout.outputs.libdir }}
+      unoserver_image: ${{ steps.mfr_params.outputs.unoserver_image }}
+      unoserver_custom: ${{ steps.unoserver_build.outcome == 'success' }}
     steps:
     - name: Checkout test repository
       uses: actions/checkout@v4
@@ -214,11 +231,80 @@ jobs:
       run: |
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
+          echo "repository=$(grep -oP '^-\s*MFR_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+          echo "branch=$(grep -oP '^-\s*MFR_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+          echo "unoserver_image=$(grep -oP '^-\s*UNOSERVER_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
           MFR_IMAGE=$(grep -oP '^-\s*MFR_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
         else
+          echo "repository=${{ github.event.inputs.mfr_repository }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.event.inputs.mfr_branch }}" >> $GITHUB_OUTPUT
+          echo "unoserver_image=${{ github.event.inputs.unoserver_image }}" >> $GITHUB_OUTPUT
           MFR_IMAGE="${{ github.event.inputs.mfr_image }}"
         fi
         echo "image=${MFR_IMAGE:-niicloudoperation/rdm-modular-file-renderer:latest}" >> $GITHUB_OUTPUT
+
+    - name: Build custom MFR images
+      if: steps.mfr_params.outputs.branch != ''
+      run: |
+        MFR_REPO="${{ steps.mfr_params.outputs.repository || 'RCOSDP/RDM-modular-file-renderer' }}"
+        MFR_BRANCH="${{ steps.mfr_params.outputs.branch }}"
+        MFR_BASE_BRANCH="develop"
+
+        echo "Building custom MFR images from ${MFR_REPO}@${MFR_BRANCH}"
+
+        # Clone base branch
+        git clone --depth=50 -b "$MFR_BASE_BRANCH" "https://github.com/${MFR_REPO}.git" RDM-modular-file-renderer
+        cd RDM-modular-file-renderer
+
+        # Merge custom branch
+        git fetch origin "$MFR_BRANCH"
+        git config user.name "github-actions[bot]"
+        git config user.email "RDM-e2e-test-nb@example.com"
+        git merge --no-ff FETCH_HEAD -m "Merge ${MFR_BRANCH} for E2E tests"
+
+        # Build the MFR image and the LibreOffice conversion server it renders office documents with
+        docker build -t rdm-mfr:custom .
+        docker build -f Dockerfile.unoserver -t rdm-unoserver:custom .
+        cd ..
+        docker save -o prebuilt-images/rdm-mfr-custom.tar rdm-mfr:custom rdm-unoserver:custom
+
+    - name: Detect MFR dependency layout
+      id: mfr_layout
+      run: |
+        if [ "${{ steps.mfr_params.outputs.branch }}" != "" ]; then
+          IMAGE="rdm-mfr:custom"
+        else
+          IMAGE="${{ steps.mfr_params.outputs.image }}"
+          docker pull "$IMAGE"
+        fi
+        PURELIB=$(docker run --rm --entrypoint python3 "$IMAGE" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+        if [ -z "$PURELIB" ]; then
+          echo "Could not detect the library directory of $IMAGE" >&2
+          exit 1
+        fi
+        LIBDIR=$(dirname "$PURELIB")
+        if docker run --rm --entrypoint python3 "$IMAGE" -m pip --version >/dev/null 2>&1; then
+          LAYOUT=legacy
+        else
+          LAYOUT=bundled
+        fi
+        echo "Detected $LAYOUT dependency layout in $IMAGE (libraries in $LIBDIR)"
+        echo "layout=$LAYOUT" >> $GITHUB_OUTPUT
+        echo "libdir=$LIBDIR" >> $GITHUB_OUTPUT
+
+    - name: Build unoserver image for a published MFR image
+      id: unoserver_build
+      if: steps.mfr_layout.outputs.layout == 'bundled' && steps.mfr_params.outputs.branch == '' && steps.mfr_params.outputs.unoserver_image == ''
+      run: |
+        MFR_REPO="${{ steps.mfr_params.outputs.repository || 'RCOSDP/RDM-modular-file-renderer' }}"
+
+        # An MFR image with bundled dependencies renders office documents through unoserver, and
+        # no published unoserver image exists yet, so it is built from the Dockerfile kept with
+        # the MFR sources
+        echo "Building unoserver image from ${MFR_REPO}@develop"
+        git clone --depth=1 -b develop "https://github.com/${MFR_REPO}.git" RDM-modular-file-renderer
+        docker build -f RDM-modular-file-renderer/Dockerfile.unoserver -t rdm-unoserver:custom RDM-modular-file-renderer
+        docker save -o prebuilt-images/rdm-unoserver-custom.tar rdm-unoserver:custom
 
     - name: Upload prebuilt images
       uses: actions/upload-artifact@v4
@@ -776,6 +862,17 @@ jobs:
           docker load -i prebuilt-images/rdm-waterbutler-custom.tar
           echo "WB_IMAGE=rdm-waterbutler:custom" >> "$GITHUB_ENV"
         fi
+
+        if [ "${{ needs.build-images.outputs.mfr_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/rdm-mfr-custom.tar
+          echo "MFR_IMAGE=rdm-mfr:custom" >> "$GITHUB_ENV"
+          echo "UNOSERVER_IMAGE=rdm-unoserver:custom" >> "$GITHUB_ENV"
+        fi
+
+        if [ "${{ needs.build-images.outputs.unoserver_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/rdm-unoserver-custom.tar
+          echo "UNOSERVER_IMAGE=rdm-unoserver:custom" >> "$GITHUB_ENV"
+        fi
         rm -rf prebuilt-images
 
     - name: Install Docker Compose
@@ -1103,8 +1200,11 @@ jobs:
         # image carries its dependencies; images built there were already set when loaded
         export MFR_IMAGE="${MFR_IMAGE:-${{ needs.build-images.outputs.mfr_image }}}"
         export WB_IMAGE="${WB_IMAGE:-${{ needs.build-images.outputs.wb_image }}}"
+        export MFR_LAYOUT="${{ needs.build-images.outputs.mfr_layout }}"
+        export MFR_LIBDIR="${{ needs.build-images.outputs.mfr_libdir }}"
         export WB_LAYOUT="${{ needs.build-images.outputs.wb_layout }}"
         export WB_LIBDIR="${{ needs.build-images.outputs.wb_libdir }}"
+        export UNOSERVER_IMAGE="${UNOSERVER_IMAGE:-${{ needs.build-images.outputs.unoserver_image }}}"
 
         source ${{ github.workspace }}/e2e-tests/.github/scripts/setup_rdm.sh
         create_docker_override

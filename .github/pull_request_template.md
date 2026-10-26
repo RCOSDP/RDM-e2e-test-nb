@@ -14,6 +14,10 @@
 - EMBER_IMAGE: 
 - CAS_IMAGE: 
 - MFR_IMAGE: 
+- MFR_REPOSITORY:
+- MFR_BRANCH:
+- UNOSERVER_IMAGE:
+<!-- UNOSERVER_IMAGE: used with an MFR image that bundles its dependencies (Python 3.13 builds); built from the MFR sources when empty. How the MFR and WaterButler images carry their dependencies is detected from the images -->
 - WB_IMAGE:
 - WB_REPOSITORY:
 - WB_BRANCH:
