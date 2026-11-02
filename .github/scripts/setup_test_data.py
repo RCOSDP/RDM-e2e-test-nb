@@ -3,6 +3,7 @@ from django.utils import timezone
 from osf.models import OSFUser, Node, Institution
 
 WIKI_ENABLED = os.environ.get('WIKI_ENABLED', 'false').lower() == 'true'
+MAPCORE_GROUP_ENABLED = os.environ.get('MAPCORE_GROUP_ENABLED', 'false').lower() == 'true'
 
 INSTITUTION_NAME = 'Virginia Tech [Test]'
 
@@ -67,6 +68,16 @@ test_users = [
         'password': 'testpass987',
         'institution': 'Massachusetts Institute of Technology [Test]',
         'skip_project': True,  # Dedicated user for project limit tests; no pre-created project
+    },
+    {
+        'username': 'testuser6@example.com',
+        'fullname': 'Test User 6',
+        'given_name': 'Test',
+        'family_name': 'User 6',
+        'given_name_ja': 'テスト',
+        'family_name_ja': 'ユーザー6',
+        'password': 'testpass666',
+        'skip_project': True,
     },
 ]
 
@@ -201,6 +212,70 @@ for user_data in test_users:
             # Output for CI config
             print(f"PROJECT_ID_{username}: {project._id}")
             print(f"PROJECT_NAME_{username}: {project.title}")
+
+# Create groups for Mapcore group tests in CI
+# Only executed when running the user-mapcore-group test group (MAPCORE_GROUP_ENABLED=true)
+if MAPCORE_GROUP_ENABLED:
+    from osf.models.mapcore_group import MapCoreGroup
+    from osf.models.mapcore_user_group import MapCoreUserGroup
+
+    mapcore_groups_data = [
+        {
+            'group_id': 'GroupA',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser2@example.com',
+            ],
+        },
+        {
+            'group_id': 'GroupB',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser6@example.com',
+            ],
+        },
+        {
+            'group_id': 'GroupC',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser4@example.com',
+            ],
+        },
+        {
+            'group_id': 'GroupD',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser5@example.com',
+            ],
+        },
+    ]
+
+    for group_data in mapcore_groups_data:
+        group, created = MapCoreGroup.objects.get_or_create(_id=group_data['group_id'])
+        if created:
+            print(f"Created MapCoreGroup: {group._id}")
+        else:
+            print(f"MapCoreGroup already exists: {group._id}")
+
+        for username in group_data['usernames']:
+            user = OSFUser.objects.filter(username=username).first()
+            if user is None:
+                raise RuntimeError(f'MAPCORE setup failed: user not found: {username}')
+
+            user_group, created = MapCoreUserGroup.objects.get_or_create(
+                mapcore_group=group,
+                user=user,
+                defaults={'is_deleted': False},
+            )
+            if created:
+                print(f"Created MapCoreUserGroup: {user.username} -> {group._id}")
+            else:
+                if user_group.is_deleted:
+                    user_group.is_deleted = False
+                    user_group.save()
+                    print(f"Restored MapCoreUserGroup: {user.username} -> {group._id}")
+                else:
+                    print(f"MapCoreUserGroup already exists: {user.username} -> {group._id}")
 
 # Affiliate users with institution
 for user_data in test_users:

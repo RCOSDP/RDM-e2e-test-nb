@@ -1,4 +1,4 @@
-name: E2E Test Execution
+﻿name: E2E Test Execution
 
 on:
   push:
@@ -60,7 +60,7 @@ on:
         required: false
         default: ''
       tljh_repo2docker_image:
-        description: 'repo2docker Docker image (default: gcr.io/nii-ap-ops/repo2docker:2026.02.0)'
+        description: 'repo2docker Docker image (default: gcr.io/nii-ap-ops/repo2docker:2026.07.2)'
         required: false
         default: ''
       tljh_rdmfs_image:
@@ -105,7 +105,78 @@ on:
           - 'false'
 
 jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    outputs:
+      wb_custom: ${{ steps.wb_params.outputs.branch != '' }}
+    steps:
+    - name: Checkout test repository
+      uses: actions/checkout@v4
+      with:
+        path: e2e-tests
+
+    - name: Build Elasticsearch image with Kuromoji (amd64)
+      working-directory: e2e-tests
+      run: |
+        docker build -t elasticsearch-kuromoji:amd64 \
+          -f docker/elasticsearch/Dockerfile.amd64 docker/elasticsearch
+        mkdir -p ../prebuilt-images
+        docker save -o ../prebuilt-images/elasticsearch-kuromoji.tar elasticsearch-kuromoji:amd64
+
+    - name: Build MinIO images from source
+      working-directory: e2e-tests
+      run: |
+        docker build -t minio-source:local -f docker/minio/Dockerfile.minio docker/minio
+        docker build -t minio-mc-source:local -f docker/minio/Dockerfile.mc docker/minio
+        docker save -o ../prebuilt-images/minio.tar minio-source:local minio-mc-source:local
+
+    - name: Parse WaterButler parameters
+      id: wb_params
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
+          echo "repository=$(grep -oP '^-\s*WB_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+          echo "branch=$(grep -oP '^-\s*WB_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+        else
+          echo "repository=${{ github.event.inputs.wb_repository }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.event.inputs.wb_branch }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build custom WaterButler image
+      if: steps.wb_params.outputs.branch != ''
+      run: |
+        WB_REPO="${{ steps.wb_params.outputs.repository || 'RCOSDP/RDM-waterbutler' }}"
+        WB_BRANCH="${{ steps.wb_params.outputs.branch }}"
+        WB_BASE_BRANCH="develop"
+
+        echo "Building custom WaterButler image from ${WB_REPO}@${WB_BRANCH}"
+
+        # Clone base branch
+        git clone --depth=50 -b "$WB_BASE_BRANCH" "https://github.com/${WB_REPO}.git" RDM-waterbutler
+        cd RDM-waterbutler
+
+        # Merge custom branch
+        git fetch origin "$WB_BRANCH"
+        git config user.name "github-actions[bot]"
+        git config user.email "RDM-e2e-test-nb@example.com"
+        git merge --no-ff FETCH_HEAD -m "Merge ${WB_BRANCH} for E2E tests"
+
+        # Build Docker image
+        docker build -t rdm-waterbutler:custom .
+        cd ..
+        docker save -o prebuilt-images/rdm-waterbutler-custom.tar rdm-waterbutler:custom
+
+    - name: Upload prebuilt images
+      uses: actions/upload-artifact@v4
+      with:
+        name: prebuilt-images
+        path: prebuilt-images/
+        retention-days: 7
+
   e2e-test:
+    needs: build-images
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -125,6 +196,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: true
+            mapcore_group_enabled: false
           - name: user-metadata
             display_name: "User Tests (Metadata)"
             include_admin: false
@@ -141,6 +213,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: admin
             display_name: "Admin Tests"
             include_admin: true
@@ -155,6 +228,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
             exclude_notebooks: |
               テスト手順-管理者機能-ログイン可否設定.ipynb
               テスト手順-管理者機能-ノード管理.ipynb
@@ -199,6 +273,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: migration-from-20250906-weko
             display_name: "Migration Test from 20250906 (WEKO)"
             include_admin: true
@@ -227,6 +302,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-minio
             display_name: "User Tests (MinIO)"
             include_admin: false
@@ -244,6 +320,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -260,6 +337,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-weko-direct
             display_name: "User Tests (WEKO Direct)"
             include_admin: true
@@ -276,6 +354,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-weko-workflow
             display_name: "User Tests (WEKO Workflow)"
             include_admin: true
@@ -292,6 +371,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-jupyterhub
             display_name: "User Tests (JupyterHub)"
             include_admin: false
@@ -307,6 +387,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-workflow-roles
             display_name: "User Tests (Flowable Roles)"
             include_admin: true
@@ -323,6 +404,7 @@ jobs:
             workflow_test_mode: roles
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-workflow-forms
             display_name: "User Tests (Flowable Forms)"
             include_admin: true
@@ -339,6 +421,7 @@ jobs:
             workflow_test_mode: forms
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-workflow-batch
             display_name: "User Tests (Flowable Batch)"
             include_admin: true
@@ -356,6 +439,7 @@ jobs:
             workflow_batch_project_count: 50
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-wiki
             display_name: "User Tests (Wiki)"
             include_admin: false
@@ -371,6 +455,7 @@ jobs:
             flowable_enabled: false
             wiki_enabled: true
             member_display_enabled: false
+            mapcore_group_enabled: false
           - name: user-metadata-mibyo-db
             display_name: "User Tests (Mibyo DB)"
             include_admin: true
@@ -387,6 +472,22 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             member_display_enabled: false
+            mapcore_group_enabled: false
+          - name: user-mapcore-group
+            display_name: "User Tests (Mapcore Group)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            mibyo_db_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
+            mapcore_group_enabled: true
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
@@ -397,6 +498,7 @@ jobs:
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
       MIBYO_DB_ENABLED: ${{ matrix.test-group.mibyo_db_enabled == true && 'true' || 'false' }}
       WIKI_ENABLED: ${{ (matrix.test-group.wiki_enabled == true || github.event.inputs.enable_wiki == 'true') && 'true' || 'false' }}
+      MAPCORE_GROUP_ENABLED: ${{ matrix.test-group.mapcore_group_enabled == true && 'true' || 'false' }}
       MINIO_ROOT_USER: e2eadmin
       MINIO_ROOT_PASSWORD: e2epassword123
       MINIO_ALIAS: ci-minio
@@ -616,12 +718,28 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Build Elasticsearch image with Kuromoji (amd64)
-      working-directory: e2e-tests
+    - name: Download prebuilt images
+      uses: actions/download-artifact@v4
+      with:
+        name: prebuilt-images
+        path: prebuilt-images
+
+    - name: Load prebuilt images
       run: |
-        docker build -t elasticsearch-kuromoji:amd64 \
-          -f docker/elasticsearch/Dockerfile.amd64 docker/elasticsearch
+        docker load -i prebuilt-images/elasticsearch-kuromoji.tar
         echo "ELASTICSEARCH_IMAGE=elasticsearch-kuromoji:amd64" >> "$GITHUB_ENV"
+
+        if [ "${MINIO_ENABLED}" = "true" ]; then
+          docker load -i prebuilt-images/minio.tar
+          echo "MINIO_IMAGE=minio-source:local" >> "$GITHUB_ENV"
+          echo "MINIO_MC_IMAGE=minio-mc-source:local" >> "$GITHUB_ENV"
+        fi
+
+        if [ "${{ needs.build-images.outputs.wb_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/rdm-waterbutler-custom.tar
+          echo "WB_IMAGE=rdm-waterbutler:custom" >> "$GITHUB_ENV"
+        fi
+        rm -rf prebuilt-images
 
     - name: Install Docker Compose
       run: |
@@ -704,6 +822,7 @@ jobs:
       if: matrix.test-group.migration_from != null
       working-directory: RDM-osf.io
       run: |
+        set -o pipefail
         echo "Creating test data in migration source environment..."
 
         # Setup institutions first (required for setup_test_data.py)
@@ -713,7 +832,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
 
         # Create test data that will be migrated
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
 
         echo "Migration source test data created"
 
@@ -790,9 +909,6 @@ jobs:
           cat > /tmp/pr_body.txt << 'EOF'
         ${{ github.event.pull_request.body }}
         EOF
-          echo "WB_CUSTOM_REPO=$(grep -oP '^-\s*WB_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_ENV
-          echo "WB_CUSTOM_BRANCH=$(grep -oP '^-\s*WB_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_ENV
-
           # Wiki parameters from PR body
           WIKI_ENABLED_OVERRIDE=$(grep -oP '^-\s*WIKI_ENABLED:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' | tr '[:upper:]' '[:lower:]' || true)
           WIKI_REPO_OVERRIDE=$(grep -oP '^-\s*WIKI_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
@@ -811,40 +927,11 @@ jobs:
           echo "Y_WEBSOCKET_CUSTOM_REPO=${Y_WEBSOCKET_REPO_OVERRIDE}" >> $GITHUB_ENV
           echo "Y_WEBSOCKET_CUSTOM_BRANCH=${Y_WEBSOCKET_BRANCH_OVERRIDE}" >> $GITHUB_ENV
         else
-          echo "WB_CUSTOM_REPO=${{ github.event.inputs.wb_repository }}" >> $GITHUB_ENV
-          echo "WB_CUSTOM_BRANCH=${{ github.event.inputs.wb_branch }}" >> $GITHUB_ENV
           echo "WIKI_CUSTOM_REPO=${{ github.event.inputs.wiki_repository }}" >> $GITHUB_ENV
           echo "WIKI_CUSTOM_BRANCH=${{ github.event.inputs.wiki_branch }}" >> $GITHUB_ENV
           echo "Y_WEBSOCKET_CUSTOM_REPO=${{ github.event.inputs.y_websocket_repository }}" >> $GITHUB_ENV
           echo "Y_WEBSOCKET_CUSTOM_BRANCH=${{ github.event.inputs.y_websocket_branch }}" >> $GITHUB_ENV
         fi
-
-    - name: Build custom WaterButler image
-      if: env.WB_CUSTOM_BRANCH != ''
-      run: |
-        WB_REPO="${WB_CUSTOM_REPO:-RCOSDP/RDM-waterbutler}"
-        WB_BRANCH="${WB_CUSTOM_BRANCH}"
-        WB_BASE_BRANCH="develop"
-
-        echo "Building custom WaterButler image from ${WB_REPO}@${WB_BRANCH}"
-
-        # Clone base branch
-        git clone --depth=50 -b "$WB_BASE_BRANCH" "https://github.com/${WB_REPO}.git" RDM-waterbutler
-        cd RDM-waterbutler
-
-        # Merge custom branch
-        git fetch origin "$WB_BRANCH"
-        git config user.name "github-actions[bot]"
-        git config user.email "RDM-e2e-test-nb@example.com"
-        git merge --no-ff FETCH_HEAD -m "Merge ${WB_BRANCH} for E2E tests"
-
-        # Build Docker image
-        docker build -t rdm-waterbutler:custom .
-        cd ..
-
-        # Override WB_IMAGE for subsequent steps
-        echo "WB_IMAGE=rdm-waterbutler:custom" >> $GITHUB_ENV
-        echo "Custom WaterButler image built successfully"
 
     - name: Build Wiki bundle and OSF image
       if: env.WIKI_ENABLED == 'true'
@@ -1229,7 +1316,7 @@ jobs:
       env:
         TLJH_VERSION: ${{ env.TLJH_VERSION_OVERRIDE || github.event.inputs.tljh_version || '1.0.0' }}
         TLJH_PLUGIN: ${{ env.TLJH_PLUGIN_OVERRIDE || github.event.inputs.tljh_plugin || 'RCOSDP/CS-tljh-repo2docker@master' }}
-        REPO2DOCKER_IMAGE: ${{ env.TLJH_REPO2DOCKER_IMAGE_OVERRIDE || github.event.inputs.tljh_repo2docker_image || 'gcr.io/nii-ap-ops/repo2docker:2026.02.0' }}
+        REPO2DOCKER_IMAGE: ${{ env.TLJH_REPO2DOCKER_IMAGE_OVERRIDE || github.event.inputs.tljh_repo2docker_image || 'gcr.io/nii-ap-ops/repo2docker:2026.07.2' }}
         RDMFS_IMAGE: ${{ env.TLJH_RDMFS_IMAGE_OVERRIDE || github.event.inputs.tljh_rdmfs_image || 'gcr.io/nii-ap-ops/rdmfs:2026.02.1' }}
       run: |
         .github/scripts/setup_tljh.sh install
@@ -1281,14 +1368,15 @@ jobs:
     - name: Create test users and projects
       working-directory: RDM-osf.io
       run: |
+        set -o pipefail
         # Setup institutions first
         docker-compose run --rm web python3 -m scripts.populate_institutions -e test -a
 
         # Copy the setup script to the container
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
-        
+
         # Execute the script and capture project IDs
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
         
         # Extract project IDs and names from output
         PROJECT_ID_1=$(grep "PROJECT_ID_testuser1@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
@@ -1369,6 +1457,24 @@ jobs:
         idp_username_project_limit_2: 'testuser5@example.com'
         idp_password_project_limit_2: 'testpass987'
 
+        # Dedicated user for groups tests
+        idp_username_3: 'testuser6@example.com'
+        idp_password_3: 'testpass666'
+        idp_username_4: 'testuser4@example.com'
+        idp_password_4: 'testpass654'
+        idp_username_5: 'testuser5@example.com'
+        idp_password_5: 'testpass987'
+        display_username_institutional_admin: 'Staff'
+        display_username_1: 'User 1'
+        display_username_2: 'User 2'
+        display_username_3: 'User 6'
+        group_a: 'GroupA'
+        group_b: 'GroupB'
+        group_c: 'GroupC'
+        group_d: 'GroupD'
+        group_search: 'Group'
+        group_note_text: '※本機能はムーンショット目標2'
+
         # Test project URLs (using created project IDs and names)
         rdm_project_url_1: 'http://192.168.168.167:5000/${{ env.PROJECT_ID_1 }}/'
         rdm_project_name_1: '${{ env.PROJECT_NAME_1 }}'
@@ -1390,6 +1496,7 @@ jobs:
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
         storages_oauth: []
+        mapcore_group_enabled: ${{ matrix.test-group.mapcore_group_enabled == true }}
         EOF
 
         args=(ci.config.yaml base_ci.config.yaml)
