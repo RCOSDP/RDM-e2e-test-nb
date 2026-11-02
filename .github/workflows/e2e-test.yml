@@ -1411,23 +1411,25 @@ jobs:
           exit 1
         fi
 
-        # Extract user guid from output (only printed when INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED=true)
-        USER_GUID=$(grep "USER_GUID_testuser2@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
-        if [ "${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" = "true" ] && [ -z "${USER_GUID}" ]; then
-          echo "Error: Failed to fetch user GUID for testuser2@example.com" >&2
-          exit 1
-        fi
-
         # Export for later steps
         echo "PROJECT_ID_1=${PROJECT_ID_1}" >> $GITHUB_ENV
         echo "PROJECT_ID_2=${PROJECT_ID_2}" >> $GITHUB_ENV
         echo "PROJECT_NAME_1=${PROJECT_NAME_1}" >> $GITHUB_ENV
         echo "PROJECT_NAME_2=${PROJECT_NAME_2}" >> $GITHUB_ENV
-        echo "USER_GUID=${USER_GUID}" >> $GITHUB_ENV
         
         echo "Projects created successfully:"
         echo "  testuser1: ${PROJECT_ID_1} - ${PROJECT_NAME_1}"
         echo "  testuser2: ${PROJECT_ID_2} - ${PROJECT_NAME_2}"
+
+        # Extract user guid from output (only printed when INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED=true)
+        if [ "${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" = "true" ]; then
+          USER_GUID=$(grep "USER_GUID_testuser2@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
+          if [ -z "${USER_GUID}" ]; then
+            echo "Error: Failed to fetch user GUID for testuser2@example.com" >&2
+            exit 1
+          fi
+          echo "USER_GUID=${USER_GUID}" >> $GITHUB_ENV
+        fi
 
     - name: Register e-Rad data
       working-directory: RDM-osf.io
