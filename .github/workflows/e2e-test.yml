@@ -212,12 +212,26 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: true
             workflow_batch_project_count: 50
+          - name: user-binderhub-oauth
+            display_name: "User Tests (BinderHub OAuth)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            binderhub_enabled: true
+            flowable_enabled: false
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
+      BINDERHUB_ENABLED: ${{ matrix.test-group.binderhub_enabled == true && 'true' || 'false' }}
       JUPYTERHUB_ENABLED: ${{ matrix.test-group.jupyterhub_enabled == true && 'true' || 'false' }}
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
       MINIO_ROOT_USER: e2eadmin
@@ -607,6 +621,11 @@ jobs:
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         setup_config_files
 
+    - name: Prepare OAuth BinderHub settings
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh prepare ../RDM-osf.io
+
     - name: Parse PR body and workflow parameters
       run: |
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -932,6 +951,11 @@ jobs:
         echo "GATEWAY_BASE_URL=http://192.168.168.167:8088/" >> $GITHUB_ENV
         echo "WORKFLOW_BATCH_PROJECT_COUNT=${{ matrix.test-group.workflow_batch_project_count || 50 }}" >> $GITHUB_ENV
 
+    - name: Install OAuth BinderHub stack
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh install
+
     - name: Install TLJH stack
       if: env.JUPYTERHUB_ENABLED == 'true'
       working-directory: e2e-tests
@@ -1094,6 +1118,9 @@ jobs:
           args+=(--s3compatsigv4-inst)
         fi
 
+        if [ "${BINDERHUB_ENABLED}" = "true" ]; then
+          args+=(--binderhub)
+        fi
         .github/scripts/generate_ci_config.sh "${args[@]}"
         rm base_ci.config.yaml
 
@@ -1232,6 +1259,24 @@ jobs:
         path: e2e-tests/weko-docker-logs.txt
         retention-days: 7
 
+    - name: Collect OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        docker compose -f docker/binderhub/compose.yaml logs --no-color > binderhub-logs.txt 2>&1
+        for container in $(docker ps -a --filter name=rdm-e2e-binder- --format '{{.Names}}'); do
+          echo "Container: $container" >> binderhub-logs.txt
+          docker logs "$container" >> binderhub-logs.txt 2>&1
+        done
+
+    - name: Upload OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binderhub-logs-${{ matrix.test-group.name }}
+        path: e2e-tests/binderhub-logs.txt
+        retention-days: 7
+
     - name: Collect TLJH logs
       if: always() && env.JUPYTERHUB_ENABLED == 'true'
       run: |
@@ -1264,6 +1309,11 @@ jobs:
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_weko.sh down ../weko
+
+    - name: Stop OAuth BinderHub stack
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh down
 
     - name: Stop TLJH stack
       if: always() && env.JUPYTERHUB_ENABLED == 'true'

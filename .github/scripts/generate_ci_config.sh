@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
-Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst]
+Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--binderhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst]
 USAGE
   exit 1
 fi
@@ -13,6 +13,7 @@ BASE_CONFIG=$2
 shift 2
 MINIO=false
 JUPYTERHUB=false
+BINDERHUB=false
 WEKO=false
 FLOWABLE=false
 S3COMPATSIGV4=false
@@ -25,6 +26,9 @@ for arg in "$@"; do
       ;;
     --jupyterhub)
       JUPYTERHUB=true
+      ;;
+    --binderhub)
+      BINDERHUB=true
       ;;
     --weko)
       WEKO=true
@@ -99,6 +103,22 @@ else
 
 jupyterhub_enabled: false
 EOF
+fi
+
+if [[ "${BINDERHUB}" == "true" ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  python3 - "$script_dir/../../docker/binderhub/.state/config.json" "$OUTPUT" <<'PYTHON'
+import json
+from pathlib import Path
+import sys
+import yaml
+config = json.loads(Path(sys.argv[1]).read_text())
+with open(sys.argv[2], 'a') as out:
+    out.write('\n')
+    yaml.safe_dump(dict(binderhub_enabled=True,
+        binderhub_binderhub_url=config['binder_origin'],
+        jupyterhub_username=config['username'], jupyterhub_password=config['password']), out)
+PYTHON
 fi
 
 if [[ "${WEKO}" == "true" ]]; then
