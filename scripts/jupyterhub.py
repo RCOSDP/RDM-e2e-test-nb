@@ -10,6 +10,6 @@ async def login(page, username, password, transition_timeout=30000):
 
 async def authorize(page, transition_timeout=30000):
     # JupyterHub authorizes a service (e.g. BinderHub addon of RDM OSF Integration)
-    authorize_button = page.locator('//*[@value = "Authorize"]')
+    authorize_button = page.get_by_role('button', name='Authorize', exact=True)
     await expect(authorize_button).to_be_visible(timeout=transition_timeout)
     await authorize_button.click()
