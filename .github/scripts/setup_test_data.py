@@ -1,5 +1,9 @@
+import os
 from django.utils import timezone
 from osf.models import OSFUser, Node, Institution
+
+WIKI_ENABLED = os.environ.get('WIKI_ENABLED', 'false').lower() == 'true'
+MAPCORE_GROUP_ENABLED = os.environ.get('MAPCORE_GROUP_ENABLED', 'false').lower() == 'true'
 
 INSTITUTION_NAME = 'Virginia Tech [Test]'
 
@@ -43,7 +47,75 @@ test_users = [
         'password': 'testpass321',
         'institution': 'Massachusetts Institute of Technology [Test]',
     },
+    {
+        'username': 'testuser4@example.com',
+        'fullname': 'Test User 4',
+        'given_name': 'Test',
+        'family_name': 'User 4',
+        'given_name_ja': 'テスト',
+        'family_name_ja': 'ユーザー4',
+        'password': 'testpass654',
+        'institution': 'Massachusetts Institute of Technology [Test]',
+        'skip_project': True,  # Dedicated user for project limit tests; no pre-created project
+    },
+    {
+        'username': 'testuser5@example.com',
+        'fullname': 'Test User 5',
+        'given_name': 'Test',
+        'family_name': 'User 5',
+        'given_name_ja': 'テスト',
+        'family_name_ja': 'ユーザー5',
+        'password': 'testpass987',
+        'institution': 'Massachusetts Institute of Technology [Test]',
+        'skip_project': True,  # Dedicated user for project limit tests; no pre-created project
+    },
+    {
+        'username': 'testuser6@example.com',
+        'fullname': 'Test User 6',
+        'given_name': 'Test',
+        'family_name': 'User 6',
+        'given_name_ja': 'テスト',
+        'family_name_ja': 'ユーザー6',
+        'password': 'testpass666',
+        'skip_project': True,
+    },
 ]
+
+def create_rdmuserkey(user):
+    # このスクリプトは `manage.py shell < file` で exec されるため、
+    # 関数内で使うシンボルは関数内で import する（トップレベル import は関数から見えない）
+    import hashlib
+    from django.utils import timezone
+    from osf.models.rdm_user_key import RdmUserKey
+
+    PRIVATE_KEY_VALUE = 1
+    PUBLIC_KEY_VALUE = 2
+
+    if RdmUserKey.objects.filter(guid=user.id).exists():
+        print(f"RdmUserKey already exists for user: {user.username}")
+        return
+    
+    now = timezone.now()
+    date_hash = hashlib.md5(now.strftime('%Y%m%d%H%M%S').encode('utf-8')).hexdigest()
+    pvt_key_name = f'{user._id}_{date_hash}_pvt.pem'
+    pub_key_name = f'{user._id}_{date_hash}_pub.pem'
+
+    pvt_key = RdmUserKey()
+    pvt_key.guid = user.id
+    pvt_key.key_name = pvt_key_name
+    pvt_key.key_kind = PRIVATE_KEY_VALUE
+    pvt_key.created_time = now
+    pvt_key.save()
+
+    pub_key = RdmUserKey()
+    pub_key.guid = user.id
+    pub_key.key_name = pub_key_name
+    pub_key.key_kind = PUBLIC_KEY_VALUE
+    pub_key.created_time = now
+    pub_key.save()
+
+    print(f"Created RdmUserKey (pvt+pub) for user: {user.username}")
+
 
 for user_data in test_users:
     username = user_data['username']
@@ -93,36 +165,117 @@ for user_data in test_users:
         user.emails.create(address=username)
         print(f"Created test user: {username}")
         
-        # Create a project for the new user
-        project = Node(
-            title=f"Test Project for {user_data['fullname']}",
-            creator=user,
-            category="project",
-            is_public=False
-        )
-        project.save()
-        print(f"Created test project: {project._id} for user: {username}")
-        # Output for CI config
-        print(f"PROJECT_ID_{username}: {project._id}")
-        print(f"PROJECT_NAME_{username}: {project.title}")
-    else:
-        print(f"Test user already exists: {username}")
-        # Ensure existing user has at least one project
-        user = OSFUser.objects.get(username=username)
-        if not user.nodes.filter(category='project').exists():
+        # Create user key (only needed when Wiki is enabled)
+        if WIKI_ENABLED:
+            create_rdmuserkey(user)
+        
+        # Skip project creation for dedicated CI users (e.g. project limit test user)
+        if user_data.get('skip_project', False):
+            print(f"Skipping project creation for {username} (skip_project=True)")
+        else:
+            # Create a project for the new user
             project = Node(
-                title=f"Test Project for {user.fullname}",
+                title=f"Test Project for {user_data['fullname']}",
                 creator=user,
                 category="project",
                 is_public=False
             )
             project.save()
-            print(f"Created test project: {project._id} for existing user: {username}")
+            print(f"Created test project: {project._id} for user: {username}")
+            # Output for CI config
+            print(f"PROJECT_ID_{username}: {project._id}")
+            print(f"PROJECT_NAME_{username}: {project.title}")
+    else:
+        print(f"Test user already exists: {username}")
+
+        # Create user key (only needed when Wiki is enabled)
+        if WIKI_ENABLED:
+            create_rdmuserkey(user)
+
+        # Skip project check for dedicated users that should not have projects
+        if user_data.get('skip_project', False):
+            print(f"Skipping project creation for {username} (skip_project=True)")
         else:
-            project = user.nodes.filter(category='project').first()
-        # Output for CI config
-        print(f"PROJECT_ID_{username}: {project._id}")
-        print(f"PROJECT_NAME_{username}: {project.title}")
+            # Ensure existing user has at least one project
+            user = OSFUser.objects.get(username=username)
+            if not user.nodes.filter(category='project').exists():
+                project = Node(
+                    title=f"Test Project for {user.fullname}",
+                    creator=user,
+                    category="project",
+                    is_public=False
+                )
+                project.save()
+                print(f"Created test project: {project._id} for existing user: {username}")
+            else:
+                project = user.nodes.filter(category='project').first()
+            # Output for CI config
+            print(f"PROJECT_ID_{username}: {project._id}")
+            print(f"PROJECT_NAME_{username}: {project.title}")
+
+# Create groups for Mapcore group tests in CI
+# Only executed when running the user-mapcore-group test group (MAPCORE_GROUP_ENABLED=true)
+if MAPCORE_GROUP_ENABLED:
+    from osf.models.mapcore_group import MapCoreGroup
+    from osf.models.mapcore_user_group import MapCoreUserGroup
+
+    mapcore_groups_data = [
+        {
+            'group_id': 'GroupA',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser2@example.com',
+            ],
+        },
+        {
+            'group_id': 'GroupB',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser6@example.com',
+            ],
+        },
+        {
+            'group_id': 'GroupC',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser4@example.com',
+            ],
+        },
+        {
+            'group_id': 'GroupD',
+            'usernames': [
+                'teststaff@example.com',
+                'testuser5@example.com',
+            ],
+        },
+    ]
+
+    for group_data in mapcore_groups_data:
+        group, created = MapCoreGroup.objects.get_or_create(_id=group_data['group_id'])
+        if created:
+            print(f"Created MapCoreGroup: {group._id}")
+        else:
+            print(f"MapCoreGroup already exists: {group._id}")
+
+        for username in group_data['usernames']:
+            user = OSFUser.objects.filter(username=username).first()
+            if user is None:
+                raise RuntimeError(f'MAPCORE setup failed: user not found: {username}')
+
+            user_group, created = MapCoreUserGroup.objects.get_or_create(
+                mapcore_group=group,
+                user=user,
+                defaults={'is_deleted': False},
+            )
+            if created:
+                print(f"Created MapCoreUserGroup: {user.username} -> {group._id}")
+            else:
+                if user_group.is_deleted:
+                    user_group.is_deleted = False
+                    user_group.save()
+                    print(f"Restored MapCoreUserGroup: {user.username} -> {group._id}")
+                else:
+                    print(f"MapCoreUserGroup already exists: {user.username} -> {group._id}")
 
 # Affiliate users with institution
 for user_data in test_users:

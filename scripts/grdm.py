@@ -69,7 +69,7 @@ async def login_as_admin(page, idp_name, idp_username, idp_password, transition_
         # すでにIdP選択済みとみなし、ユーザー名とパスワード入力を試みる
         await _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=transition_timeout)
 
-async def login(page, idp_name, idp_username, idp_password, transition_timeout=30000):
+async def login(page, idp_name, idp_username, idp_password, transition_timeout=30000, after_logout: bool = False):
     if idp_name is None:
         # CASでログイン
         if '/login' not in page.url:
@@ -77,7 +77,7 @@ async def login(page, idp_name, idp_username, idp_password, transition_timeout=3
             await page.locator('//button[text() = "ログイン"]').click()
         await login_cas(page, idp_username, idp_password)
         return
-    
+
     # FakeCASの場合の処理
     if idp_name == 'FakeCAS':
         # FakeCAS(port 8080)でない場合のみサインインボタンをクリック
@@ -85,10 +85,11 @@ async def login(page, idp_name, idp_username, idp_password, transition_timeout=3
             await page.locator('//button[@data-test-sign-in-button]').click()
         await login_fakecas(page, idp_username)
         return
-    
+
     # 通常のIdP選択フロー（GakuNin RDM IdP, Orthrosなど）
     try:
-        await page.locator('//*[@id = "dropdown_img"]').click()
+        idp_dropdown_locator = '//*[@id = "clear_a"]' if after_logout else '//*[@id = "dropdown_img"]'
+        await page.locator(idp_dropdown_locator).click()
 
         # IdPが要素として作成されることを確認
         locator = page.locator(f'//*[@class = "list_idp" and text() = "{idp_name}"]')
@@ -117,7 +118,7 @@ async def logout(page, idp_name, transition_timeout=30000):
         await page.locator('//*[@data-test-ad-logout]').click()
     else:
         await page.locator('//div[@class = "nav-profile-name"]').click()
-        await page.locator('//*[contains(text(), "ログアウト")]').click()
+        await page.get_by_role("link", name="ログアウト").click()
 
     if idp_name == 'FakeCAS':
         await expect(page.locator('//button[@data-test-sign-in-button]')).to_be_visible(timeout=transition_timeout)
@@ -210,10 +211,11 @@ async def expect_dashboard(page, transition_timeout=30000, retries=3):
             # 1分待って再チャレンジ
             await asyncio.sleep(60)            
     
-async def ensure_project_exists(page, project_name, transition_timeout=30000):
+async def ensure_project_exists(page, project_name, transition_timeout=30000, existence_timeout=10000):
     await expect(page.locator('//*[@data-test-create-project-modal-button]')).to_have_count(1, timeout=transition_timeout)
     try:
-        await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible()
+        # 不存在(タイムアウト)が作成フローへの正常分岐のため、既定の長いexpectタイムアウトを使わない
+        await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible(timeout=existence_timeout)
         return False
     except:
         # プロジェクトが存在しない
@@ -242,10 +244,13 @@ async def ensure_project_exists(page, project_name, transition_timeout=30000):
         await expect(page.locator(f'//*[@data-test-dashboard-item-title and text()="{project_name}"]')).to_be_visible(timeout=transition_timeout)
         return True    
 
-async def delete_project(page, transition_timeout=30000):
+async def delete_project(page, transition_timeout=30000, is_component=False):
     await page.locator(f'//ul[contains(@class, "navbar-nav")]//a[text() = "設定"]').click()
     await asyncio.sleep(3)
-    await page.locator('//button[text() = "プロジェクトを削除" and @data-target = "#nodesDelete"]').click()
+    if is_component:
+        await page.locator('//button[text() = "コンポーネントを削除" and @data-target = "#nodesDelete"]').click()
+    else:
+        await page.locator('//button[text() = "プロジェクトを削除" and @data-target = "#nodesDelete"]').click()
 
     confirmation_label = page.locator('//strong[@data-bind = "text: confirmationString"]')
     await expect(confirmation_label).to_have_count(1, timeout=transition_timeout)
@@ -371,26 +376,39 @@ async def drop_file(page, element_locator, path):
 async def drag_and_drop(page, source, dest):
     await expect(source).to_have_class(re.compile('.*ui-draggable.*'))
 
-    center_coordinates_source = await source.evaluate('''element => {
-        const rect = element.getBoundingClientRect();
-        return {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2
-        };
-    }''')
+    # ドロップ先→ソースの順で可視化し、両方がビューポート内にあることを保証する
+    await dest.scroll_into_view_if_needed()
+    await source.scroll_into_view_if_needed()
+    await expect(dest).to_be_in_viewport()
+    await expect(source).to_be_in_viewport()
 
-    center_coordinates_dest = await dest.evaluate('''element => {
-        const rect = element.getBoundingClientRect();
-        return {
-            x: rect.left + rect.width / 2,
-            y: rect.top + rect.height / 2
-        };
-    }''')
+    async def centers():
+        result = []
+        for locator in (source, dest):
+            result.append(await locator.evaluate('''element => {
+                const rect = element.getBoundingClientRect();
+                return [rect.left + rect.width / 2, rect.top + rect.height / 2];
+            }'''))
+        return result
 
-    await page.mouse.move(center_coordinates_source['x'], center_coordinates_source['y'])
+    # jQuery UIはドラッグ開始時にドロップ先の位置をキャッシュするため、開始前に
+    # レイアウトが静止していること(バナー出現や再描画の途中でないこと)を確認する
+    previous = await centers()
+    for _ in range(25):
+        await page.wait_for_timeout(200)
+        current = await centers()
+        if current == previous:
+            break
+        previous = current
+    else:
+        raise AssertionError(f'layout did not settle before drag and drop: {current}')
+
+    (source_x, source_y), (dest_x, dest_y) = current
+
+    await page.mouse.move(source_x, source_y)
     await page.mouse.down()
     await page.wait_for_timeout(1000)
-    await page.mouse.move(center_coordinates_dest['x'], center_coordinates_dest['y'], steps=30)
+    await page.mouse.move(dest_x, dest_y, steps=30)
     await page.wait_for_timeout(1000)
     await page.mouse.up()
 
@@ -471,3 +489,177 @@ async def verify_property_folder_info(
     await expect(locator_path).to_have_text(folderpath)
 
     time.sleep(1)
+
+async def open_wiki(page, wikiname, text, transition_timeout=60000):
+    await page.locator(f'//*[contains(@class, "title-text")]//a[text()="{wikiname}"]').click()
+    await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#pageName')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#pageName')).to_have_text(wikiname, timeout=transition_timeout)
+    await expect(page.locator('#wikiViewRender')).to_contain_text(text, timeout=transition_timeout)
+
+async def open_edit_wiki(page, transition_timeout=60000):
+    await page.locator('//div[@id="editWysiwyg"]//span[normalize-space()="編集"]').click()
+    await expect(page.locator('#mMenuBar')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#mEditor .ProseMirror[contenteditable="true"]')).to_be_visible(timeout=transition_timeout)
+
+async def select_text_range(page, text, transition_timeout=60000):
+    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    await editor_locator.focus()
+    await editor_locator.evaluate("""
+    (el, targetText) => {
+        const p = Array.from(el.querySelectorAll('p')).find(par => par.innerText === targetText);
+        if (!p) return;
+        let textNode = p.firstChild;
+        if (textNode.nodeType !== Node.TEXT_NODE) {
+            textNode = textNode.firstChild;
+        }
+        const range = document.createRange();
+        range.setStart(textNode, 0);
+        range.setEnd(textNode, textNode.length);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+    """, text)
+
+async def fill_text(page, text, transition_timeout=60000):
+    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    await editor_locator.click()
+    await editor_locator.press("Enter")
+    await editor_locator.fill(text)
+    await expect(editor_locator).to_have_text(text, timeout=transition_timeout)
+
+async def click_wiki_menu_save(page, menu_list, transition_timeout=60000):
+    for menu in menu_list:
+        locator_by_id = page.locator(f'#{menu}')
+        if await locator_by_id.count() > 0:
+            await locator_by_id.click()
+            continue
+
+        locator_by_text = page.locator(f'#mMenuBar span:has-text("{menu}")')
+        if await locator_by_text.count() > 0:
+            await locator_by_text.click()
+            if menu == 'format_color_text':
+                await set_text_color(page.locator('.m-menu-color-input'), 255, 0, 0)  # R=255, G=0, B=0
+            if menu == 'table':
+                await fill_all_cells(page)
+            continue
+
+        raise ValueError(f"Menu item '{menu}' not found in wiki menu bar.")
+
+    await page.locator('//input[@type="submit" and @value="保存"]').click()
+    await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+
+async def set_text_color(color_input, r, g, b):
+    r = max(0, min(255, r))
+    g = max(0, min(255, g))
+    b = max(0, min(255, b))
+    
+    # Convert RGB to HEX
+    hex_color = f"#{r:02x}{g:02x}{b:02x}"
+    # Fill value to input color
+    await color_input.fill(hex_color)
+
+async def fill_all_cells(page):
+    rows = await page.locator("table tbody tr").count()
+    for row_idx in range(rows):
+        row = page.locator("table tbody tr").nth(row_idx)
+        cells_count = await row.locator("th, td").count()
+        
+        for col_idx in range(cells_count):
+            text = f"row{row_idx}col{col_idx}"
+            cell = row.locator("th, td").nth(col_idx)
+
+            await cell.evaluate("""
+                (cell, text) => {
+                    let p = cell.querySelector('p');
+                    if (!p) {
+                        p = document.createElement('p');
+                        cell.appendChild(p);
+                    }
+                    p.innerHTML = text;
+                }
+            """, text)
+
+async def click_table_menu_save(page, row_index, col_index, table_menu, transition_timeout=60000):
+    table = page.locator('#mEditor .ProseMirror .tableWrapper table').first
+    first_cell = table.locator("tr").first.locator("th, td").first
+    await first_cell.click(force=True)
+    if table_menu == 'セルを削除':
+        last_cell = table.locator("tr").first.locator("th, td").last
+        await last_cell.click(modifiers=["Shift"])
+    for _ in range(row_index):
+        await page.keyboard.press("ArrowDown")
+    for _ in range(col_index):
+        if table_menu == 'セルを削除':
+            await page.keyboard.press("Shift+ArrowRight")
+        else:
+            await page.keyboard.press("ArrowRight")
+
+    await page.locator("#arrowDropDown").click()
+    await page.locator(f'.table-dropdown-item:has-text("{table_menu}")').click()
+    await page.locator('//input[@type="submit" and @value="保存"]').click()
+
+    view_locator = page.locator('#mView .ProseMirror[contenteditable="false"]')
+    await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
+
+async def click_and_expect_alert(page, action, expected_message, transition_timeout=60000):
+    async with page.expect_event("dialog", timeout=transition_timeout*5) as dialog_info:
+        await action()
+    dialog = await dialog_info.value
+    print(dialog.message)
+    print(expected_message)
+    assert dialog.message == expected_message
+    await dialog.accept()
+    await expect(page.locator('//*[contains(@class, "title-text")]//*[text() = "プロジェクトのWiki"]')).to_be_visible(timeout=transition_timeout)
+
+
+async def go_to_file_detail(page, filename_move, work_dir):
+    transition_timeout = 60000
+    await get_select_file_title_locator(page, filename_move).click(timeout=transition_timeout)
+    await expect(page.get_by_text(re.compile(r"^タイムスタンプ検証中"))).not_to_be_visible(timeout=transition_timeout * 5)
+    time.sleep(2)
+
+    # タイムスタンプエラーが発生した場合は、画面の証跡を記録した上で、「タイムスタンプを打つ」を押して、タイムスタンプエラーが解消するか確認すること
+    locator_timestamperror = page.get_by_text(re.compile(r"^タイムスタンプの検証"))
+    if await locator_timestamperror.is_visible():
+        print('timestamp error')
+        await page.locator(f'//a[contains(text(), "タイムスタンプを打つ")]').click(timeout=transition_timeout * 5)
+        await expect(page.get_by_text(re.compile(r"^タイムスタンプ検証中"))).not_to_be_visible(timeout=transition_timeout * 5)
+        await expect(page.get_by_text(re.compile(r"^タイムスタンプの検証"))).not_to_be_visible(timeout=transition_timeout * 5)
+
+    # 200 KiB より大きいファイルは詳細情報の表示はできない
+    filepath = os.path.join(work_dir, filename_move)
+    filesize = os.path.getsize(filepath)
+    large_filesize = 204800 # (200 * 1024)
+    if filesize > large_filesize:
+        print('file size > 200kB')
+        text = 'Text files larger than 200 KiB are not rendered. Please download the file to view.'
+        frame = page.frame_locator("iframe[src*='/render']")
+        alert_locator = frame.locator('//div[contains(@class, "alert-warning")]')
+        await alert_locator.wait_for(state="visible", timeout=transition_timeout * 5)
+        await expect(alert_locator).to_have_text(text, timeout=transition_timeout * 5)
+
+async def back_to_file_list_screen(page, provider, target_file_view):
+    transition_timeout = 60000
+    if target_file_view != 'file-tab':
+        await page.locator("a.project-title").click()
+    else:
+        await page.locator('#projectNavFiles a').click()
+    time.sleep(1)
+    await expect(page.locator('//a[text() = "アドオン"]')).to_be_visible(timeout=transition_timeout)
+    await expect(get_select_expanded_storage_title_locator(page, provider)).to_be_visible(timeout=transition_timeout)
+
+async def move_file_to_storage(page, provider, filename_move):
+    transition_timeout = 60000
+    await expect(get_select_file_title_locator(page, filename_move)).to_be_visible(timeout=transition_timeout * 2)
+    await get_select_file_extension_locator(page, filename_move).click()
+    source = get_select_file_draggable_locator(page, filename_move)
+    dest = get_select_storage_title_locator(page, provider)
+
+    await drag_and_drop(page, source, dest)
+    await expect(page.get_by_text(re.compile(r"^移動中"))).not_to_be_visible(timeout=transition_timeout * 5)
+    time.sleep(10)
+    await page.reload()
+    
+    await expect(get_select_file_title_locator(page, filename_move)).to_be_visible(timeout=transition_timeout * 5)

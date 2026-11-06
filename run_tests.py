@@ -46,7 +46,7 @@ class TestRunner:
         self.skip_admin = False
         self.skip_login = False
         self.enable_1gb_file_upload = False
-        self.skip_erad_completion_test = False
+        self.skip_autofill = False
         self.binderhub_enabled = False
         self.binderhub_binderhub_url = None
         self.jupyterhub_username = None
@@ -56,6 +56,7 @@ class TestRunner:
         self.tljh_username = None
         self.tljh_password = None
         self.weko_enabled = False
+        self.mibyo_db_enabled = False
         # WEKO / JAIRO Cloud specific parameters
         self.weko_url = None
         self.weko_admin_email = None
@@ -66,6 +67,8 @@ class TestRunner:
         self.weko_index_name = None
         self.weko_docker_compose_path = None
         self.sword_mapping_id = 30002
+        self.mibyo_db_sword_mapping_id = 51000
+        self.weko_test_mode = 'direct'
         self.ignore_https_errors = False
         # S3CompatSigV4 specific parameters
         self.s3compatsigv4_enabled = False
@@ -73,6 +76,8 @@ class TestRunner:
         # Workflow specific parameters
         self.workflow_enabled = False
         self.gateway_base_url = None
+        # Wiki specific parameters
+        self.wiki_enabled = False
         # Workflow admin user parameters
         self.idp_name_integrated_admin = None
         self.idp_username_integrated_admin = None
@@ -89,8 +94,37 @@ class TestRunner:
         self.idp_username_other_institution = None
         self.idp_password_other_institution = None
         self.workflow_batch_project_count = 50
+        self.workflow_test_mode = None
         self.institution_name = None
         
+        # Project limit dedicated user parameters
+        self.idp_name_project_limit_1 = None
+        self.idp_username_project_limit_1 = None
+        self.idp_password_project_limit_1 = None
+        self.institution_name_project_limit_1 = None
+        self.idp_name_project_limit_2 = None
+        self.idp_username_project_limit_2 = None
+        self.idp_password_project_limit_2 = None
+        
+        # Mapcore group test parameters
+        self.idp_username_3 = None
+        self.idp_password_3 = None
+        self.idp_username_4 = None
+        self.idp_password_4 = None
+        self.idp_username_5 = None
+        self.idp_password_5 = None
+        self.display_username_institutional_admin = None
+        self.display_username_1 = None
+        self.display_username_2 = None
+        self.display_username_3 = None
+        self.group_a = None
+        self.group_b = None
+        self.group_c = None
+        self.group_d = None
+        self.group_search = None
+        self.group_note_text = None
+        self.mapcore_group_enabled = False
+
         # Exclude notebooks
         self.exclude_notebooks = []
         
@@ -378,7 +412,7 @@ class TestRunner:
                     idp_username_2=getattr(self, 'idp_username_2', None),
                     idp_password_2=getattr(self, 'idp_password_2', None),
                     skip_failed_test=self.skip_failed_test,
-                    skip_erad_completion_test=self.skip_erad_completion_test,
+                    skip_autofill=self.skip_autofill,
                     exclude_notebooks=self.exclude_notebooks,
                 )
             )
@@ -417,6 +451,30 @@ class TestRunner:
                 )
             )
             
+    def run_project_limit_tests(self):
+        """Run project limit number tests."""
+        print('\n=== Project Limit Tests ===')
+
+        if not self.skip_admin:
+            self.result_notebooks.append(
+                self.run_notebook(
+                    '取りまとめ-管理者機能-プロジェクト制限数.ipynb',
+                    admin_rdm_url=self.admin_rdm_url,
+                    idp_name_project_limit_1=getattr(self, 'idp_name_project_limit_1', None),
+                    idp_username_project_limit_1=getattr(self, 'idp_username_project_limit_1', None),
+                    idp_password_project_limit_1=getattr(self, 'idp_password_project_limit_1', None),
+                    institution_name_project_limit_1=getattr(self, 'institution_name_project_limit_1', None),
+                    idp_name_project_limit_2=getattr(self, 'idp_name_project_limit_2', None),
+                    idp_username_project_limit_2=getattr(self, 'idp_username_project_limit_2', None),
+                    idp_password_project_limit_2=getattr(self, 'idp_password_project_limit_2', None),
+                    idp_name_integrated_admin=getattr(self, 'idp_name_integrated_admin', None),
+                    idp_username_integrated_admin=getattr(self, 'idp_username_integrated_admin', None),
+                    idp_password_integrated_admin=getattr(self, 'idp_password_integrated_admin', None),
+                    skip_failed_test=self.skip_failed_test,
+                    exclude_notebooks=self.exclude_notebooks,
+                )
+            )
+
     def run_jupyterhub_tests(self):
         """Run BinderHub/TLJH related tests."""
         print('\n=== JupyterHub Tests ===')
@@ -494,12 +552,49 @@ class TestRunner:
                 weko_index_name=self.weko_index_name,
                 weko_docker_compose_path=self.weko_docker_compose_path,
                 sword_mapping_id=self.sword_mapping_id,
+                weko_test_mode=self.weko_test_mode,
                 ignore_https_errors=self.ignore_https_errors,
                 idp_name_2=getattr(self, 'idp_name_2', None),
                 idp_username_2=getattr(self, 'idp_username_2', None),
                 idp_password_2=getattr(self, 'idp_password_2', None),
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
+            )
+        )
+
+    def run_mibyo_db_tests(self):
+        """Run Mibyo DB tests."""
+        print('\n=== Mibyo DB Tests ===')
+        if not self.mibyo_db_enabled:
+            print('Skipping Mibyo DB tests (mibyo_db_enabled=false)')
+            return
+
+        missing_params = [
+            name for name in [
+                'weko_url', 'weko_admin_email', 'weko_admin_password',
+                'weko_index_name', 'weko_docker_compose_path'
+            ]
+            if not getattr(self, name, None)
+        ]
+        if missing_params:
+            print('Error: Missing Mibyo DB parameters: ' + ', '.join(missing_params))
+            sys.exit(1)
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                'テスト手順-Metadataアドオン-未病データベース.ipynb',
+                admin_rdm_url=self.admin_rdm_url,
+                myproject_url=self.rdm_url + 'myprojects/',
+                idp_name_institutional_admin=self.idp_name_institutional_admin,
+                idp_username_institutional_admin=self.idp_username_institutional_admin,
+                idp_password_institutional_admin=self.idp_password_institutional_admin,
+                weko_url=self.weko_url,
+                weko_admin_email=self.weko_admin_email,
+                weko_admin_password=self.weko_admin_password,
+                weko_index_name=self.weko_index_name,
+                weko_docker_compose_path=self.weko_docker_compose_path,
+                sword_mapping_id=self.mibyo_db_sword_mapping_id,
+                ignore_https_errors=self.ignore_https_errors,
             )
         )
 
@@ -526,6 +621,7 @@ class TestRunner:
                 'idp_username_other_institution',
                 'idp_password_other_institution',
                 'institution_name',
+                'workflow_test_mode',
             ]
             if not getattr(self, name, None)
         ]
@@ -552,6 +648,62 @@ class TestRunner:
                 idp_password_other_institution=self.idp_password_other_institution,
                 batch_project_count=self.workflow_batch_project_count,
                 institution_name=self.institution_name,
+                workflow_test_mode=self.workflow_test_mode,
+                skip_failed_test=self.skip_failed_test,
+                exclude_notebooks=self.exclude_notebooks,
+            )
+        )
+        
+    def run_wiki_tests(self):
+        """Run wiki tests."""
+        print('\n=== Wiki Tests ===')
+        if not self.wiki_enabled:
+            print('Skipping Wiki tests (wiki_enabled=false)')
+            return
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                '取りまとめ-Wiki操作.ipynb',
+                skip_failed_test=self.skip_failed_test,
+                exclude_notebooks=self.exclude_notebooks,
+            )
+        )
+            
+
+    def run_mapcore_group_tests(self):
+        """Run Mapcore group tests."""
+        print('\n=== Mapcore group Tests ===')
+
+        if not self.mapcore_group_enabled:
+            print('Skipping Mapcore group tests (mapcore_group_enabled=false)')
+            return
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                '取りまとめ-グループ.ipynb',
+                admin_rdm_url=self.admin_rdm_url,
+                idp_username_institutional_admin=self.idp_username_institutional_admin,
+                idp_password_institutional_admin=self.idp_password_institutional_admin,
+                idp_username_1=self.idp_username_1,
+                idp_password_1=self.idp_password_1,
+                idp_username_2=self.idp_username_2,
+                idp_password_2=self.idp_password_2,
+                idp_username_3=self.idp_username_3,
+                idp_password_3=self.idp_password_3,
+                idp_username_4=self.idp_username_4,
+                idp_password_4=self.idp_password_4,
+                idp_username_5=self.idp_username_5,
+                idp_password_5=self.idp_password_5,
+                display_username_institutional_admin=self.display_username_institutional_admin,
+                display_username_1=self.display_username_1,
+                display_username_2=self.display_username_2,
+                display_username_3=self.display_username_3,
+                group_a=self.group_a,
+                group_b=self.group_b,
+                group_c=self.group_c,
+                group_d=self.group_d,
+                group_search=self.group_search,
+                group_note_text=self.group_note_text,
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
             )
@@ -656,11 +808,15 @@ class TestRunner:
         self.run_s3compatsigv4_institutional_storage_tests()
         self.run_metadata_tests()
         self.run_admin_tests()
+        self.run_project_limit_tests()
         self.run_jupyterhub_tests()
         self.run_binderhub_tests()
         self.run_weko_tests()
+        self.run_mibyo_db_tests()
         self.run_workflow_tests()
-        
+        self.run_mapcore_group_tests()
+        self.run_wiki_tests()
+
         result_notebooks = [result_notebook for result_notebook in self.result_notebooks if result_notebook is not None]
         
         print(f'\nTest run completed at {datetime.now()}')
