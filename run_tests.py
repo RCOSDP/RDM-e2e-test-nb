@@ -49,6 +49,7 @@ class TestRunner:
         self.skip_autofill = False
         self.binderhub_enabled = False
         self.binderhub_binderhub_url = None
+        self.binderhub_use_default_server = False
         self.jupyterhub_username = None
         self.jupyterhub_password = None
         self.jupyterhub_enabled = False
@@ -512,6 +513,7 @@ class TestRunner:
         self.result_notebooks.append(self.run_notebook(
             '取りまとめ-BinderHub-BinderHubアドオン.ipynb',
             binderhub_binderhub_url=self.binderhub_binderhub_url,
+            binderhub_use_default_server=self.binderhub_use_default_server,
             binderhub_auth_mode='jupyterhub',
             jupyterhub_username=self.jupyterhub_username,
             jupyterhub_password=self.jupyterhub_password,
