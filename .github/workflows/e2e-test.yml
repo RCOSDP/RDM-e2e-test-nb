@@ -315,6 +315,24 @@ jobs:
             flowable_enabled: false
             wiki_enabled: false
             mapcore_group_enabled: false
+          - name: user-nextcloud
+            display_name: "User Tests (Nextcloud)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            s3compatsigv4_enabled: false
+            weko_enabled: false
+            mibyo_db_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
+            mapcore_group_enabled: false
+            nextcloud_enabled: true
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -475,6 +493,10 @@ jobs:
             mapcore_group_enabled: true
     name: E2E ${{ matrix.test-group.display_name }}
     env:
+      NEXTCLOUD_ENABLED: ${{ matrix.test-group.nextcloud_enabled == true && 'true' || 'false' }}
+      NEXTCLOUD_URL: https://192.168.168.167:18443
+      NEXTCLOUD_USERNAME: e2eadmin
+      NEXTCLOUD_PASSWORD: e2epassword123
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
@@ -888,6 +910,11 @@ jobs:
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         setup_config_files
 
+    - name: Prepare Nextcloud configuration
+      if: env.NEXTCLOUD_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_nextcloud.sh prepare ../RDM-osf.io
+
     - name: Parse PR body and workflow parameters
       run: |
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -1102,6 +1129,15 @@ jobs:
         source ${{ github.workspace }}/e2e-tests/.github/scripts/setup_rdm.sh
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         start_rdm_services
+
+    - name: Start Nextcloud and trust its certificate
+      if: env.NEXTCLOUD_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        .github/scripts/setup_nextcloud.sh install ../RDM-osf.io
+        cd ../RDM-osf.io
+        source ../e2e-tests/.github/scripts/setup_rdm.sh
+        test_rdm_endpoints
 
     - name: Register OAuth scopes
       working-directory: RDM-osf.io
@@ -1484,6 +1520,9 @@ jobs:
         if [ "${MINIO_ENABLED}" = "true" ]; then
           args+=(--minio)
         fi
+        if [ "${NEXTCLOUD_ENABLED}" = "true" ]; then
+          args+=(--nextcloud)
+        fi
         if [ "${JUPYTERHUB_ENABLED}" = "true" ]; then
           args+=(--jupyterhub)
         fi
@@ -1681,6 +1720,23 @@ jobs:
         name: y-websocket-logs-${{ matrix.test-group.name }}
         path: e2e-tests/y-websocket-logs.txt
         if-no-files-found: ignore
+
+    - name: Collect Nextcloud logs
+      if: always() && env.NEXTCLOUD_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: docker compose -f docker/nextcloud/compose.yaml logs > nextcloud-logs.txt 2>&1
+
+    - name: Upload Nextcloud logs
+      if: always() && env.NEXTCLOUD_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: nextcloud-logs-${{ matrix.test-group.name }}
+        path: e2e-tests/nextcloud-logs.txt
+
+    - name: Stop Nextcloud stack
+      if: always() && env.NEXTCLOUD_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_nextcloud.sh down
 
     - name: Stop WEKO stack
       if: always() && (env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true')
