@@ -195,6 +195,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: true
             mapcore_group_enabled: false
           - name: user-metadata
             display_name: "User Tests (Metadata)"
@@ -211,6 +212,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: admin
             display_name: "Admin Tests"
@@ -225,6 +227,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
             exclude_notebooks: |
               テスト手順-管理者機能-ログイン可否設定.ipynb
@@ -269,6 +272,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: migration-from-20250906-weko
             display_name: "Migration Test from 20250906 (WEKO)"
@@ -297,6 +301,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-minio
             display_name: "User Tests (MinIO)"
@@ -314,6 +319,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
@@ -330,6 +336,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-weko-direct
             display_name: "User Tests (WEKO Direct)"
@@ -346,6 +353,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-weko-workflow
             display_name: "User Tests (WEKO Workflow)"
@@ -362,6 +370,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-jupyterhub
             display_name: "User Tests (JupyterHub)"
@@ -377,6 +386,7 @@ jobs:
             jupyterhub_enabled: true
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-roles
             display_name: "User Tests (Flowable Roles)"
@@ -393,6 +403,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: roles
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-forms
             display_name: "User Tests (Flowable Forms)"
@@ -409,6 +420,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: forms
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-batch
             display_name: "User Tests (Flowable Batch)"
@@ -426,6 +438,7 @@ jobs:
             workflow_test_mode: batch
             workflow_batch_project_count: 50
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-wiki
             display_name: "User Tests (Wiki)"
@@ -441,6 +454,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: true
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-metadata-mibyo-db
             display_name: "User Tests (Mibyo DB)"
@@ -457,6 +471,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-mapcore-group
             display_name: "User Tests (Mapcore Group)"
@@ -1410,10 +1425,13 @@ jobs:
         idp_name_1: 'FakeCAS'
         idp_username_1: 'testuser1@example.com'
         idp_password_1: 'testpass123'
+        # fullname of testuser1/testuser2 in .github/scripts/setup_test_data.py (shown in contributor list)
+        idp_user_display_name_1: 'Test User 1'
 
         idp_name_2: 'FakeCAS'
         idp_username_2: 'testuser2@example.com'
         idp_password_2: 'testpass456'
+        idp_user_display_name_2: 'Test User 2'
 
         # Admin users for admin page tests
         idp_name_integrated_admin: 'FakeCAS'
@@ -1474,6 +1492,7 @@ jobs:
         weko_enabled: ${{ matrix.test-group.weko_enabled == true }}
         weko_test_mode: ${{ matrix.test-group.weko_test_mode || 'direct' }}
         mibyo_db_enabled: ${{ matrix.test-group.mibyo_db_enabled == true }}
+        member_display_enabled: ${{ matrix.test-group.member_display_enabled == true }}
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
         storages_oauth: []
