@@ -89,10 +89,30 @@ start_rdm_services() {
         SERVICES="$SERVICES minio"
     fi
 
+    # An MFR image with legacy dependencies converts office documents through the unoconv
+    # listener defined in the RDM-osf.io compose file, so it is started where previews are
+    # tested. An image with bundled dependencies brings its own conversion services
+    # (mfr_worker, unoserver) through the override instead.
+    if [ "${MFR_PREVIEW_ENABLED:-false}" = "true" ] && [ "${MFR_LAYOUT:-legacy}" = "legacy" ]; then
+        SERVICES="$SERVICES unoconv"
+    fi
+
     echo "Starting services: $SERVICES"
     
     # Use start_services function
     start_services
+
+    # The conversion services of an MFR image with bundled dependencies are checked once
+    # here. A compose healthcheck would keep running at its interval for the whole test
+    # run, and the worker check starts a Python process each time.
+    if [ "${MFR_LAYOUT:-legacy}" = "bundled" ]; then
+        SERVICE_NAME="unoserver" \
+        CHECK_COMMAND="docker-compose exec -T unoserver python3 -c \"from xmlrpc.client import ServerProxy; ServerProxy('http://127.0.0.1:2003').info()\"" \
+        TIMEOUT=120 INTERVAL=5 wait_for_service
+        SERVICE_NAME="MFR worker" \
+        CHECK_COMMAND="docker-compose exec -T mfr_worker sh -c 'python3 -m celery -A mfr.tasks.app:app inspect ping --destination=mfr@\$HOSTNAME --timeout=5'" \
+        TIMEOUT=120 INTERVAL=5 wait_for_service
+    fi
     
     # Wait for ember build to complete
     echo "Waiting for Ember build to complete..."
@@ -225,6 +245,131 @@ BINDERHUB_EOF
 
 # Function to create docker-compose override with NII Cloud Operation images
 create_docker_override() {
+    # How the WaterButler and MFR images carry their Python dependencies, as detected from
+    # the images by the E2E workflow (WB_LAYOUT / MFR_LAYOUT) together with the directory
+    # that holds the interpreter's library and site-packages (WB_LIBDIR / MFR_LIBDIR,
+    # e.g. /usr/local/lib/python3.13):
+    #   legacy  - the image ships pip and the requirements volume is populated by running
+    #             "invoke install", as the RDM-osf.io compose definition does for it
+    #   bundled - the image has no pip and brings its dependencies installed, so the volume
+    #             is populated by copying the installed library tree instead
+    # The volumes get the library directory in their names so that an environment upgraded
+    # from a legacy image gets fresh volumes: a volume that already holds the old
+    # site-packages and the old interpreter in /usr/local/bin would otherwise be mounted
+    # into the new image.
+    # The legacy directories are the ones the RDM-osf.io docker-compose.yml mounts.
+    local legacy_wb_libdir='/usr/local/lib/python3.6'
+    local legacy_mfr_libdir='/usr/local/lib/python3.5'
+
+    local wb_layout="${WB_LAYOUT:-legacy}"
+    local wb_libdir="${WB_LIBDIR:-}"
+    local wb_libname='' wb_voltag=''
+    local wb_requirements_override=''
+    local wb_volumes_override=''
+    local wb_volumes_declaration=''
+
+    case "$wb_layout" in
+        legacy)
+            if [ -n "$wb_libdir" ] && [ "$wb_libdir" != "$legacy_wb_libdir" ]; then
+                echo "WaterButler image keeps its libraries in $wb_libdir, but the legacy compose definition mounts $legacy_wb_libdir" >&2
+                return 1
+            fi
+            ;;
+        bundled)
+            wb_libname=$(basename "$wb_libdir")
+            if ! printf '%s' "$wb_libname" | grep -Eq '^python3\.[0-9]+$'; then
+                echo "WB_LIBDIR must name the library directory of a WaterButler image with bundled dependencies (got '$wb_libdir')" >&2
+                return 1
+            fi
+            wb_voltag=${wb_libname#python}
+            wb_voltag=${wb_voltag//./_}
+            wb_requirements_override="    command:
+      - /bin/bash
+      - -c
+      - rm -Rf /${wb_libname}/* &&
+        cp -Rf -p ${wb_libdir} /
+    volumes:
+      - wb_requirements_${wb_voltag}_vol:/${wb_libname}
+      - wb_requirements_${wb_voltag}_local_bin_vol:/usr/local/bin"
+            wb_volumes_override="    volumes:
+      - wb_requirements_${wb_voltag}_vol:${wb_libdir}
+      - wb_requirements_${wb_voltag}_local_bin_vol:/usr/local/bin"
+            wb_volumes_declaration="  wb_requirements_${wb_voltag}_vol:
+    external: false
+  wb_requirements_${wb_voltag}_local_bin_vol:
+    external: false"
+            ;;
+        *)
+            echo "Unsupported WaterButler dependency layout: $wb_layout" >&2
+            return 1
+            ;;
+    esac
+
+    # MFR is handled the same way. An MFR image with bundled dependencies renders office
+    # documents only through a Celery worker that hands the conversion to a LibreOffice
+    # server (unoserver), so both are added as services and the legacy "unoconv" listener
+    # is not used. The MFR server and its worker exchange files through /tmp, so the
+    # worker mounts the same volume as the server.
+    local mfr_layout="${MFR_LAYOUT:-legacy}"
+    local mfr_libdir="${MFR_LIBDIR:-}"
+    local mfr_libname='' mfr_voltag=''
+    local unoserver_image="${UNOSERVER_IMAGE:-}"
+    local mfr_requirements_override=''
+    local mfr_volumes_override=''
+    local mfr_depends_on_override=''
+    local mfr_volumes_declaration=''
+    local mfr_env_additions=''
+
+    case "$mfr_layout" in
+        legacy)
+            if [ -n "$mfr_libdir" ] && [ "$mfr_libdir" != "$legacy_mfr_libdir" ]; then
+                echo "MFR image keeps its libraries in $mfr_libdir, but the legacy compose definition mounts $legacy_mfr_libdir" >&2
+                return 1
+            fi
+            ;;
+        bundled)
+            mfr_libname=$(basename "$mfr_libdir")
+            if ! printf '%s' "$mfr_libname" | grep -Eq '^python3\.[0-9]+$'; then
+                echo "MFR_LIBDIR must name the library directory of an MFR image with bundled dependencies (got '$mfr_libdir')" >&2
+                return 1
+            fi
+            if [ -z "$unoserver_image" ]; then
+                echo "UNOSERVER_IMAGE must be set for an MFR image with bundled dependencies" >&2
+                return 1
+            fi
+            mfr_voltag=${mfr_libname#python}
+            mfr_voltag=${mfr_voltag//./_}
+            mfr_requirements_override="    command:
+      - /bin/bash
+      - -c
+      - rm -Rf /${mfr_libname}/* &&
+        cp -Rf -p ${mfr_libdir} /
+    volumes:
+      - mfr_requirements_${mfr_voltag}_vol:/${mfr_libname}
+      - mfr_requirements_${mfr_voltag}_local_bin_vol:/usr/local/bin"
+            mfr_volumes_override="    volumes:
+      - mfr_requirements_${mfr_voltag}_vol:${mfr_libdir}
+      - mfr_requirements_${mfr_voltag}_local_bin_vol:/usr/local/bin"
+            mfr_depends_on_override='    depends_on:
+      mfr_worker:
+        condition: service_started'
+            mfr_volumes_declaration="  mfr_requirements_${mfr_voltag}_vol:
+    external: false
+  mfr_requirements_${mfr_voltag}_local_bin_vol:
+    external: false"
+            mfr_env_additions='
+# Celery worker and LibreOffice conversion server for office document rendering
+TASKS_CONFIG_BROKER_URL=amqp://guest:guest@rabbitmq:5672//
+TASKS_CONFIG_WAIT_TIMEOUT=120
+UNOSERVER_EXTENSION_CONFIG_HOST=unoserver
+UNOSERVER_EXTENSION_CONFIG_PORT=2003'
+            ;;
+        *)
+            echo "Unsupported MFR dependency layout: $mfr_layout" >&2
+            return 1
+            ;;
+    esac
+
     # Use environment variables for images
     local osf_image="${OSF_IMAGE:-niicloudoperation/rdm-osf.io:latest}"
     local ember_image="${EMBER_IMAGE:-niicloudoperation/rdm-ember-osf-web:latest}"
@@ -234,12 +379,39 @@ create_docker_override() {
     local elasticsearch_image="${ELASTICSEARCH_IMAGE:-elasticsearch:2}"
     local y_websocket_url="${Y_WEBSOCKET_URL:-}"
 
+    # Services that only exist for an MFR image with bundled dependencies. They are appended
+    # inside the "services:" block of the override, so the text starts at service indentation.
+    local mfr_worker_services=''
+    if [ "$mfr_layout" = "bundled" ]; then
+        mfr_worker_services="  mfr_worker:
+    image: ${mfr_image}
+    command: python3 -m invoke celery --hostname=mfr@%h --concurrency=2
+    restart: unless-stopped
+    env_file:
+      - .docker-compose.mfr.env
+    volumes:
+      - mfr_requirements_${mfr_voltag}_vol:${mfr_libdir}
+      - mfr_requirements_${mfr_voltag}_local_bin_vol:/usr/local/bin
+      - wb_tmp_vol:/tmp
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      unoserver:
+        condition: service_started
+  unoserver:
+    image: ${unoserver_image}
+    restart: unless-stopped"
+    fi
+
     echo "Creating docker-compose override with:"
     echo "  OSF: $osf_image"
     echo "  Ember: $ember_image"
     echo "  CAS: $cas_image"
-    echo "  MFR: $mfr_image"
-    echo "  WaterButler: $wb_image"
+    echo "  MFR: $mfr_image ($mfr_layout dependencies${mfr_libdir:+, libraries in $mfr_libdir})"
+    if [ -n "$unoserver_image" ]; then
+        echo "  unoserver: $unoserver_image"
+    fi
+    echo "  WaterButler: $wb_image ($wb_layout dependencies${wb_libdir:+, libraries in $wb_libdir})"
     echo "  Elasticsearch: $elasticsearch_image"
     if [ -n "$y_websocket_url" ]; then
         echo "  Y-WebSocket: $y_websocket_url"
@@ -294,14 +466,21 @@ services:
     image: ${cas_image}
   mfr:
     image: ${mfr_image}
+${mfr_volumes_override}
+${mfr_depends_on_override}
   mfr_requirements:
     image: ${mfr_image}
+${mfr_requirements_override}
+${mfr_worker_services}
   wb:
     image: ${wb_image}
+${wb_volumes_override}
   wb_worker:
     image: ${wb_image}
+${wb_volumes_override}
   wb_requirements:
     image: ${wb_image}
+${wb_requirements_override}
   kaken_elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     environment:
@@ -336,6 +515,21 @@ EOL
     echo "" >> .docker-compose.wb.env
     echo "SERVER_CONFIG_DOMAIN=http://192.168.168.167:7777" >> .docker-compose.wb.env
 
+    # The RDM-osf.io env file enables the MFR local-development rewrite, which points the
+    # file URLs embedded in rendered previews (PDF, video, ...) at localhost:7777 and drops
+    # the mode parameter. The E2E browser is logged in on 192.168.168.167, so those
+    # requests would reach WaterButler without the session cookie and fail with 401.
+    sed -i.bak 's/^EXTENSION_CONFIG_LOCAL_DEVELOPMENT=.*/EXTENSION_CONFIG_LOCAL_DEVELOPMENT=0/' .docker-compose.mfr.env
+    rm -f .docker-compose.mfr.env.bak
+    if ! grep -q '^EXTENSION_CONFIG_LOCAL_DEVELOPMENT=0$' .docker-compose.mfr.env; then
+        echo "EXTENSION_CONFIG_LOCAL_DEVELOPMENT could not be disabled in .docker-compose.mfr.env" >&2
+        return 1
+    fi
+
+    if [ -n "$mfr_env_additions" ]; then
+        printf '%s\n' "$mfr_env_additions" >> .docker-compose.mfr.env
+    fi
+
     if [ "${MINIO_ENABLED:-false}" = "true" ]; then
         local script_dir
         script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -348,6 +542,18 @@ EOL
         python3 "${script_dir}/weko_setup_cert.py" \
             "${PWD}/docker-compose.override.yml" \
             "${script_dir}/../../../weko/nginx/keys/server.crt"
+    fi
+
+    # Top-level volume declarations go last: the steps above append further services
+    # to the override file, and they must stay under "services:".
+    if [ -n "$wb_volumes_declaration" ] || [ -n "$mfr_volumes_declaration" ]; then
+        printf '\nvolumes:\n' >> docker-compose.override.yml
+        if [ -n "$wb_volumes_declaration" ]; then
+            printf '%s\n' "$wb_volumes_declaration" >> docker-compose.override.yml
+        fi
+        if [ -n "$mfr_volumes_declaration" ]; then
+            printf '%s\n' "$mfr_volumes_declaration" >> docker-compose.override.yml
+        fi
     fi
 }
 

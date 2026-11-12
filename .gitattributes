@@ -2,3 +2,5 @@
 *.ipynb	diff=jupyternotebook
 
 *.ipynb	merge=jupyternotebook
+
+testdata/mfr-preview/*.pdf binary

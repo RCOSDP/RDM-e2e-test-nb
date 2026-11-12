@@ -40,6 +40,7 @@ class TestRunner:
         self.skip_failed_test = True
         self.transition_timeout = 60000
         self.skip_preview_check = False
+        self.mfr_preview_enabled = False
         self.skip_130mb_upload = False
         self.skip_default_storage = False
         self.skip_metadata = False
@@ -259,6 +260,12 @@ class TestRunner:
     def run_storage_tests(self):
         """Run storage-related tests."""
         print('\n=== Storage Tests ===')
+        if self.mfr_preview_enabled:
+            self.result_notebooks.append(self.run_notebook(
+                'テスト手順-ストレージ共通-ファイルプレビュー.ipynb',
+                target_storage_name='NII Storage',
+                delete_project=True,
+            ))
         
         # Default storage test
         if not self.skip_default_storage:

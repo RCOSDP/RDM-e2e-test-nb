@@ -1,0 +1,3 @@
+MFR preview test
+日本語の表示確認：研究データ
+ASCII: ABC xyz 0123456789
