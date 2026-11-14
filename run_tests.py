@@ -47,6 +47,7 @@ class TestRunner:
         self.skip_login = False
         self.enable_1gb_file_upload = False
         self.skip_autofill = False
+        self.nextcloud_enabled = False
         self.jupyterhub_enabled = False
         self.tljh_url = None
         self.tljh_username = None
@@ -317,6 +318,22 @@ class TestRunner:
                 )
             )
             
+        if self.nextcloud_enabled:
+            self.result_notebooks.append(
+                self.run_notebook(
+                    'テスト手順-WebDAVストレージ-アカウント設定.ipynb',
+                    webdav_host=self.nextcloud_url,
+                    webdav_username=self.nextcloud_username,
+                    webdav_password=self.nextcloud_password,
+                    webdav_folder='e2e',
+                    rdm_project_name='TEST-NEXTCLOUD-{}'.format(
+                        datetime.now().strftime('%Y%m%d-%H%M%S')
+                    ),
+                    skip_130mb_upload=self.skip_130mb_upload,
+                    skip_preview_check=self.skip_preview_check,
+                )
+            )
+
         # OAuth storage tests (require manual setup, so skip in automated tests)
         print('\nSkipping OAuth storage tests (require manual setup)')
         

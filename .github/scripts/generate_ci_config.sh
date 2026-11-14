@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
-Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki]
+Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--nextcloud] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki]
 USAGE
   exit 1
 fi
@@ -12,6 +12,7 @@ OUTPUT=$1
 BASE_CONFIG=$2
 shift 2
 MINIO=false
+NEXTCLOUD=false
 JUPYTERHUB=false
 WEKO=false
 FLOWABLE=false
@@ -23,6 +24,9 @@ for arg in "$@"; do
   case "$arg" in
     --minio)
       MINIO=true
+      ;;
+    --nextcloud)
+      NEXTCLOUD=true
       ;;
     --jupyterhub)
       JUPYTERHUB=true
@@ -82,6 +86,16 @@ else
   cat >> "${OUTPUT}" <<'EOF'
 
 storages_s3: []
+EOF
+fi
+
+if [[ "${NEXTCLOUD}" == "true" ]]; then
+  cat >> "${OUTPUT}" <<EOF
+
+nextcloud_enabled: true
+nextcloud_url: '${NEXTCLOUD_URL}'
+nextcloud_username: '${NEXTCLOUD_USERNAME}'
+nextcloud_password: '${NEXTCLOUD_PASSWORD}'
 EOF
 fi
 
