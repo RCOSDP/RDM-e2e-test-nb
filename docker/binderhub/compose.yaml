@@ -1,0 +1,9 @@
+services:
+  hub:
+    build: .
+    network_mode: host
+    environment:
+      OAUTHLIB_INSECURE_TRANSPORT: '1'
+    volumes:
+      - ./.state:/opt/e2e/.state
+      - /var/run/docker.sock:/var/run/docker.sock

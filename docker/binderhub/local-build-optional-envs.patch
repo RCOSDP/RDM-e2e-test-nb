@@ -1,0 +1,4 @@
+--- a/binderhub/build_local.py
++++ b/binderhub/build_local.py
+@@ -139,0 +140 @@
++        env.update(self.optional_envs or {})

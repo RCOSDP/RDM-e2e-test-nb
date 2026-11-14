@@ -47,6 +47,11 @@ class TestRunner:
         self.skip_login = False
         self.enable_1gb_file_upload = False
         self.skip_autofill = False
+        self.binderhub_enabled = False
+        self.binderhub_binderhub_url = None
+        self.binderhub_use_default_server = False
+        self.jupyterhub_username = None
+        self.jupyterhub_password = None
         self.jupyterhub_enabled = False
         self.tljh_url = None
         self.tljh_username = None
@@ -501,6 +506,23 @@ class TestRunner:
             )
         )
 
+    def run_binderhub_tests(self):
+        """Run the same OAuth BinderHub notebooks used for interactive acceptance tests."""
+        if not self.binderhub_enabled:
+            return
+        if not all((self.binderhub_binderhub_url, self.jupyterhub_username, self.jupyterhub_password)):
+            raise ValueError('BinderHub URL, JupyterHub username and password are required')
+        self.result_notebooks.append(self.run_notebook(
+            '取りまとめ-BinderHub-BinderHubアドオン.ipynb',
+            binderhub_binderhub_url=self.binderhub_binderhub_url,
+            binderhub_use_default_server=self.binderhub_use_default_server,
+            binderhub_auth_mode='jupyterhub',
+            jupyterhub_username=self.jupyterhub_username,
+            jupyterhub_password=self.jupyterhub_password,
+            skip_failed_test=self.skip_failed_test,
+            exclude_notebooks=self.exclude_notebooks,
+        ))
+
     def run_weko_tests(self):
         """Run WEKO addon tests."""
         print('\n=== WEKO Tests ===')
@@ -810,6 +832,7 @@ class TestRunner:
         self.run_admin_tests()
         self.run_project_limit_tests()
         self.run_jupyterhub_tests()
+        self.run_binderhub_tests()
         self.run_weko_tests()
         self.run_mibyo_db_tests()
         self.run_workflow_tests()
