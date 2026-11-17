@@ -400,93 +400,6 @@ class TestRunner:
             )
         )
 
-    def run_download_history_tests(self):
-        """Run download history log tests (dedicated admin switch + storage download/zip-download log checks)."""
-        print('\n=== Download History Log Tests ===')
-        if not self.download_history_enabled:
-            print('Skipping download history log tests (download_history_enabled=false)')
-            return
-
-        # NII Storage (default storage)
-        self.result_notebooks.append(
-            self.run_notebook(
-                '取りまとめ-ダウンロード履歴-ストレージ統合.ipynb',
-                optional_result_id='-NII Storage',
-                target_storage_id='osfstorage',
-                admin_rdm_url=self.admin_rdm_url,
-                idp_name_integrated_admin=self.idp_name_integrated_admin,
-                idp_username_integrated_admin=self.idp_username_integrated_admin,
-                idp_password_integrated_admin=self.idp_password_integrated_admin,
-                idp_user_display_name_1=getattr(self, 'idp_user_display_name_1', None),
-            )
-        )
-
-        # S3 / S3 Compatible Storage
-        for storage_info in self.storages_s3:
-            storage_id = storage_info['id']
-            storage_name = storage_info['name']
-
-            access_key_1 = getattr(self, f'{storage_id}_access_key_1', None)
-            if not access_key_1:
-                print(f'Skipping {storage_name} download history test (credentials not configured)')
-                continue
-
-            print(f'\nDownload history test - {storage_name}')
-            bucket = getattr(self, f'{storage_id}_test_bucket_name_1', None)
-
-            self.result_notebooks.append(
-                self.run_notebook(
-                    '取りまとめ-ダウンロード履歴-ストレージ統合.ipynb',
-                    optional_result_id=f'-{storage_name}',
-                    target_storage_id=storage_id,
-                    s3_access_key_1=access_key_1,
-                    s3_secret_access_key_1=getattr(self, f'{storage_id}_secret_access_key_1', None),
-                    s3_default_region_1=getattr(self, f'{storage_id}_default_region_1', None),
-                    s3_test_bucket_name_1=bucket,
-                    bucket=bucket,
-                    s3compat_type_name_1=getattr(self, 's3compat_type_name_1', None) if storage_id == 's3compat' else None,
-                    admin_rdm_url=self.admin_rdm_url,
-                    idp_name_integrated_admin=self.idp_name_integrated_admin,
-                    idp_username_integrated_admin=self.idp_username_integrated_admin,
-                    idp_password_integrated_admin=self.idp_password_integrated_admin,
-                    idp_user_display_name_1=getattr(self, 'idp_user_display_name_1', None),
-                )
-            )
-
-        # S3 Compatible Storage (SigV4)
-        if self.s3compatsigv4_enabled:
-            access_key_1 = getattr(self, 's3compatsigv4_access_key_1', None)
-            if not access_key_1:
-                print('Skipping S3CompatSigV4 download history test (credentials not configured)')
-            else:
-                print('\nDownload history test - S3 Compatible Storage (SigV4)')
-                bucket = getattr(self, 's3compatsigv4_test_bucket_name_1', None)
-                self.result_notebooks.append(
-                    self.run_notebook(
-                        '取りまとめ-ダウンロード履歴-ストレージ統合.ipynb',
-                        optional_result_id='-S3 Compatible Storage (SigV4)',
-                        target_storage_id='s3compatsigv4',
-                        s3_access_key_1=access_key_1,
-                        s3_secret_access_key_1=getattr(self, 's3compatsigv4_secret_access_key_1', None),
-                        s3_endpoint_1=getattr(self, 's3compatsigv4_endpoint_1', None),
-                        s3_test_bucket_name_1=bucket,
-                        bucket=bucket,
-                        s3compat_type_name_1=getattr(self, 's3compatsigv4_type_name_1', None),
-                        admin_rdm_url=self.admin_rdm_url,
-                        idp_name_integrated_admin=self.idp_name_integrated_admin,
-                        idp_username_integrated_admin=self.idp_username_integrated_admin,
-                        idp_password_integrated_admin=self.idp_password_integrated_admin,
-                        idp_user_display_name_1=getattr(self, 'idp_user_display_name_1', None),
-                    )
-                )
-        else:
-            print('Skipping S3CompatSigV4 download history test (s3compatsigv4_enabled=false)')
-
-        # OAuth storage tests (Dropbox / Google Drive / OneDrive / Nextcloud) require
-        # manual/interactive addon setup, same limitation as the existing regression
-        # suite (run_storage_tests) - covered manually via the test spec instead.
-        print('\nSkipping OAuth storage download history tests (require manual setup)')
-
     def run_metadata_tests(self):
         """Run metadata addon tests."""
         print('\n=== Metadata Tests ===')
@@ -797,6 +710,65 @@ class TestRunner:
                 exclude_notebooks=self.exclude_notebooks,
             )
         )
+        
+    def run_download_history_tests(self):
+        """Run download history log tests (dedicated admin switch + storage download/zip-download log checks)."""
+        print('\n=== Download History Log Tests ===')
+        if not self.download_history_enabled:
+            print('Skipping download history log tests (download_history_enabled=false)')
+            return
+
+        # NII Storage (default storage)
+        print(f'Download history test - osfstorage')
+        self.result_notebooks.append(
+            self.run_notebook(
+                'テスト手順-ストレージ共通-ダウンロード履歴.ipynb',
+                optional_result_id='-NII Storage',
+                target_storage_id='osfstorage',
+                admin_rdm_url=self.admin_rdm_url,
+                idp_name_integrated_admin=self.idp_name_integrated_admin,
+                idp_username_integrated_admin=self.idp_username_integrated_admin,
+                idp_password_integrated_admin=self.idp_password_integrated_admin,
+                idp_user_display_name_1=getattr(self, 'idp_user_display_name_1', None),
+            )
+        )
+
+        # S3 / S3 Compatible Storage (including SigV4)
+        _storages_s3 = self.storages_s3 + (
+            [{'id': 's3compatsigv4', 'name': 'S3 Compatible Storage (SigV4)'}]
+            if self.s3compatsigv4_enabled else []
+        )
+        for storage_info in _storages_s3:
+            storage_id = storage_info['id']
+            storage_name = storage_info['name']
+
+            access_key_1 = getattr(self, f'{storage_id}_access_key_1', None)
+            if not access_key_1:
+                print(f'Skipping {storage_name} download history test (credentials not configured)')
+                continue
+
+            print(f'Download history test - {storage_name}')
+            self.result_notebooks.append(
+                self.run_notebook(
+                    'テスト手順-ストレージ共通-ダウンロード履歴.ipynb',
+                    optional_result_id=f'-{storage_name}',
+                    target_storage_id=storage_id,
+                    s3_access_key_1=access_key_1,
+                    s3_secret_access_key_1=getattr(self, f'{storage_id}_secret_access_key_1', None),
+                    s3_test_bucket_name_1=getattr(self, f'{storage_id}_test_bucket_name_1', None),
+                    s3compat_type_name_1=getattr(self, f'{storage_id}_type_name_1', None),
+                    admin_rdm_url=self.admin_rdm_url,
+                    idp_name_integrated_admin=self.idp_name_integrated_admin,
+                    idp_username_integrated_admin=self.idp_username_integrated_admin,
+                    idp_password_integrated_admin=self.idp_password_integrated_admin,
+                    idp_user_display_name_1=getattr(self, 'idp_user_display_name_1', None),
+                )
+            )
+
+        # OAuth storage tests (Dropbox / Google Drive / OneDrive / Nextcloud) require
+        # manual/interactive addon setup, same limitation as the existing regression
+        # suite (run_storage_tests) - covered manually via the test spec instead.
+        print('\nSkipping OAuth storage download history tests (require manual setup)')
 
     def check_notebook_errors(self, notebook_path):
         """Check a notebook and all its sub-notebooks recursively for execution errors."""
