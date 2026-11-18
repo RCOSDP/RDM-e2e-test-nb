@@ -665,7 +665,7 @@ async def move_file_to_storage(page, provider, filename_move):
     await expect(get_select_file_title_locator(page, filename_move)).to_be_visible(timeout=transition_timeout * 5)
 
 
-async def verify_download_log(page, username, rdm_project_name, path, target_storage_id, is_zip_download, bucket, transition_timeout=60000):
+async def verify_download_log(page, username, rdm_project_name, path, target_storage_id, is_zip_download, bucket, expected_count=1, transition_timeout=60000):
     storage_templates = {
         "osfstorage": (
             f"{username}が{rdm_project_name}のNII Storageからファイル{path}をダウンロードしました",
@@ -707,7 +707,7 @@ async def verify_download_log(page, username, rdm_project_name, path, target_sto
     
     file_msg, zip_msg = storage_templates[target_storage_id]
     expected_message = zip_msg if is_zip_download else file_msg
-    await expect(page.locator("#logFeed")).to_contain_text(expected_message, timeout=transition_timeout)
+    await expect(page.locator("#logFeed").get_by_text(expected_message)).to_have_count(expected_count, timeout=transition_timeout)
 
 
 async def verify_open_onlyoffice_log(page, username, rdm_project_name, path, target_storage_id, total_number_open_onlyoffice_log, transition_timeout=60000):
@@ -728,10 +728,7 @@ async def verify_open_onlyoffice_log(page, username, rdm_project_name, path, tar
 
     await page.locator("#logFeed").scroll_into_view_if_needed(timeout=transition_timeout)
     expected_message = storage_templates[target_storage_id]
-    await expect(page.locator("#logFeed")).to_contain_text(expected_message, timeout=transition_timeout)
-
-    number_log = await page.locator("#logFeed").get_by_text(expected_message).count()
-    assert number_log == total_number_open_onlyoffice_log
+    await expect(page.locator("#logFeed").get_by_text(expected_message)).to_have_count(total_number_open_onlyoffice_log, timeout=transition_timeout)
 
 
 async def verify_add_file_log(page, username, rdm_project_name, path, target_storage_id, bucket, transition_timeout=60000):
