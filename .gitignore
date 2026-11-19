@@ -44,3 +44,7 @@ reports/
 erad_dummy.tsv
 # Temporary link to scripts for migrations
 migrations/scripts
+
+# macOS metadata file
+__MACOSX/
+._*
