@@ -32,12 +32,18 @@ fi
 MINIO_IMAGE_DEFAULT=${MINIO_IMAGE:-minio/minio:latest}
 MINIO_MC_IMAGE_DEFAULT=${MINIO_MC_IMAGE:-minio/mc:latest}
 
+MINIO_DOMAIN_SETTING=""
+if [[ "${S3_MINIO_ENABLED:-false}" = "true" ]]; then
+  MINIO_DOMAIN_SETTING="      MINIO_DOMAIN: s3.amazonaws.com,s3.us-east-1.amazonaws.com,s3-us-east-1.amazonaws.com"
+fi
+
 MINIO_DOCKER_SNIPPET=$(cat <<YAML
   minio:
     image: ${MINIO_IMAGE_DEFAULT}
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+${MINIO_DOMAIN_SETTING}
     command: server /data --console-address :9001
     expose:
       - "9000"
@@ -62,6 +68,47 @@ fi
 
 if ! grep -q '^  minio:' "${compose_override}"; then
   printf '\n%s\n' "${MINIO_DOCKER_SNIPPET}" >> "${compose_override}"
+fi
+
+if [[ "${S3_MINIO_ENABLED:-false}" = "true" ]]; then
+  if ! grep -q '^  s3-minio-proxy:' "${compose_override}"; then
+    cat >> "${compose_override}" <<'YAML'
+
+  s3-minio-proxy:
+    image: nginx:alpine
+    depends_on:
+      - minio
+    ports:
+      - "127.0.0.1:443:443"
+    volumes:
+      - ./.s3-minio:/certs:ro
+      - ./.s3-minio/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      default:
+        aliases:
+          - s3.amazonaws.com
+          - s3.us-east-1.amazonaws.com
+          - s3-us-east-1.amazonaws.com
+          - s3-e2e-a.s3.amazonaws.com
+          - s3-e2e-b.s3.amazonaws.com
+          - s3-e2e-a.s3.us-east-1.amazonaws.com
+          - s3-e2e-b.s3.us-east-1.amazonaws.com
+          - s3-e2e-a.s3-us-east-1.amazonaws.com
+          - s3-e2e-b.s3-us-east-1.amazonaws.com
+YAML
+  fi
+
+  # This fixture exercises signing and file operations without an external KMS.
+  python - "${RDM_ROOT}/addons/s3/static/settings.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+settings = Path(sys.argv[1])
+data = json.loads(settings.read_text())
+data['encryptUploads'] = False
+settings.write_text(json.dumps(data, indent=4) + '\n')
+PY
 fi
 
 settings_json="${RDM_ROOT}/addons/s3compat/static/settings.json"
