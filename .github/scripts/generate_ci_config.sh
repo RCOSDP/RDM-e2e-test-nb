@@ -57,12 +57,18 @@ done
 cp "${BASE_CONFIG}" "${OUTPUT}"
 
 if [[ "${S3_MINIO}" == "true" ]]; then
-  cat >> "${OUTPUT}" <<EOF
+  if [[ "${S3_MINIO_INST_ENABLED:-false}" == "true" ]]; then
+    printf '\nstorages_s3: []\ns3_institutional_storage_enabled: true\n' >> "${OUTPUT}"
+  else
+    cat >> "${OUTPUT}" <<'EOF'
 
 storages_s3:
   - id: 's3'
     name: 'Amazon S3'
     skip_too_many_files_check: true
+EOF
+  fi
+  cat >> "${OUTPUT}" <<EOF
 
 s3_access_key_1: '${S3COMPAT_ACCESS_KEY_1}'
 s3_secret_access_key_1: '${S3COMPAT_SECRET_KEY_1}'

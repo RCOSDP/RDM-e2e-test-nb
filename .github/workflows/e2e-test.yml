@@ -333,6 +333,31 @@ jobs:
             minio_enabled: true
             s3_minio_enabled: true
             member_display_enabled: false
+          - name: admin-s3-minio
+            display_name: "Institutional Storage (Amazon S3 via MinIO)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+          - name: admin-s3-minio-regional
+            display_name: "Institutional Storage (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+            minio_region: ap-northeast-1
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -504,6 +529,7 @@ jobs:
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
       S3_MINIO_ENABLED: ${{ matrix.test-group.s3_minio_enabled == true && 'true' || 'false' }}
+      S3_MINIO_INST_ENABLED: ${{ matrix.test-group.s3_minio_institutional == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
@@ -516,7 +542,7 @@ jobs:
       MINIO_ROOT_PASSWORD: e2epassword123
       MINIO_ALIAS: ci-minio
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_REGION: us-east-1
+      MINIO_REGION: ${{ matrix.test-group.minio_region || 'us-east-1' }}
       MINIO_SERVICE_NAME: MinIO (CI)
 
     steps:

@@ -4,7 +4,8 @@ set -euo pipefail
 COMMAND=${1:?Usage: setup_s3_minio.sh <prepare|install> <RDM directory>}
 RDM_ROOT=$(realpath "${2:?RDM directory is required}")
 STATE_DIR="${RDM_ROOT}/.s3-minio"
-DOMAINS=(s3.amazonaws.com s3.us-east-1.amazonaws.com s3-us-east-1.amazonaws.com)
+region=${MINIO_REGION:-us-east-1}
+DOMAINS=(s3.amazonaws.com "s3.${region}.amazonaws.com" "s3-${region}.amazonaws.com")
 HOSTS=("${DOMAINS[@]}")
 for domain in "${DOMAINS[@]}"; do
     HOSTS+=("s3-e2e-a.${domain}" "s3-e2e-b.${domain}")
@@ -53,7 +54,11 @@ NGINX
     docker-compose up -d s3-minio-proxy
     printf '127.0.0.1 %s\n' "${HOSTS[*]}" | sudo tee -a /etc/hosts
 
-    for service in web api worker wb wb_worker; do
+    services=(web api worker wb wb_worker)
+    if [[ "${S3_MINIO_INST_ENABLED:-false}" == "true" ]]; then
+        services+=(admin)
+    fi
+    for service in "${services[@]}"; do
         container=$(docker-compose ps -q "$service")
         docker cp "${STATE_DIR}/server.crt" "${container}:/usr/local/share/ca-certificates/s3-minio.crt"
         docker-compose exec -T "$service" update-ca-certificates
@@ -66,7 +71,7 @@ with Path(certifi.where()).open('ab') as stream:
     stream.write(b'\n' + certificate)
 PY
     done
-    docker-compose restart web api worker wb wb_worker
+    docker-compose restart "${services[@]}"
     docker-compose exec -T wb python3 - <<'PY'
 import asyncio
 import aiohttp

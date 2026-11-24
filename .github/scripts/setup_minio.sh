@@ -34,7 +34,9 @@ MINIO_MC_IMAGE_DEFAULT=${MINIO_MC_IMAGE:-minio/mc:latest}
 
 MINIO_DOMAIN_SETTING=""
 if [[ "${S3_MINIO_ENABLED:-false}" = "true" ]]; then
-  MINIO_DOMAIN_SETTING="      MINIO_DOMAIN: s3.amazonaws.com,s3.us-east-1.amazonaws.com,s3-us-east-1.amazonaws.com"
+  region=${MINIO_REGION:-us-east-1}
+  MINIO_DOMAIN_SETTING="      MINIO_DOMAIN: s3.amazonaws.com,s3.${region}.amazonaws.com,s3-${region}.amazonaws.com
+      MINIO_SITE_REGION: ${region}"
 fi
 
 MINIO_DOCKER_SNIPPET=$(cat <<YAML
@@ -72,7 +74,7 @@ fi
 
 if [[ "${S3_MINIO_ENABLED:-false}" = "true" ]]; then
   if ! grep -q '^  s3-minio-proxy:' "${compose_override}"; then
-    cat >> "${compose_override}" <<'YAML'
+    cat >> "${compose_override}" <<YAML
 
   s3-minio-proxy:
     image: nginx:alpine
@@ -87,14 +89,14 @@ if [[ "${S3_MINIO_ENABLED:-false}" = "true" ]]; then
       default:
         aliases:
           - s3.amazonaws.com
-          - s3.us-east-1.amazonaws.com
-          - s3-us-east-1.amazonaws.com
+          - s3.${region}.amazonaws.com
+          - s3-${region}.amazonaws.com
           - s3-e2e-a.s3.amazonaws.com
           - s3-e2e-b.s3.amazonaws.com
-          - s3-e2e-a.s3.us-east-1.amazonaws.com
-          - s3-e2e-b.s3.us-east-1.amazonaws.com
-          - s3-e2e-a.s3-us-east-1.amazonaws.com
-          - s3-e2e-b.s3-us-east-1.amazonaws.com
+          - s3-e2e-a.s3.${region}.amazonaws.com
+          - s3-e2e-b.s3.${region}.amazonaws.com
+          - s3-e2e-a.s3-${region}.amazonaws.com
+          - s3-e2e-b.s3-${region}.amazonaws.com
 YAML
   fi
 
