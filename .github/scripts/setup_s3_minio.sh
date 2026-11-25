@@ -74,6 +74,15 @@ certificate = Path('/usr/local/share/ca-certificates/s3-minio.crt').read_bytes()
 with Path(certifi.where()).open('ab') as stream:
     stream.write(b'\n' + certificate)
 PY
+        if [[ "${S3_MIGRATION_LEGACY:-false}" == "true" ]]; then
+            docker-compose exec -T "$service" python3 - <<'PY'
+from pathlib import Path
+from boto.connection import DEFAULT_CA_CERTS_FILE
+
+with Path(DEFAULT_CA_CERTS_FILE).open('ab') as stream:
+    stream.write(b'\n' + Path('/usr/local/share/ca-certificates/s3-minio.crt').read_bytes())
+PY
+        fi
     done
     docker-compose restart "${services[@]}"
     docker-compose exec -T wb python3 - <<'PY'

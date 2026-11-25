@@ -33,6 +33,10 @@ MINIO_IMAGE_DEFAULT=${MINIO_IMAGE:-minio/minio:latest}
 MINIO_MC_IMAGE_DEFAULT=${MINIO_MC_IMAGE:-minio/mc:latest}
 
 MINIO_DOMAIN_SETTING=""
+MINIO_DATA_MOUNT=""
+if [[ "${S3_MIGRATION_ENABLED:-false}" == "true" ]]; then
+  MINIO_DATA_MOUNT=$'    volumes:\n      - s3-migration-data:/data'
+fi
 if [[ "${S3_MINIO_ENABLED:-false}" = "true" ]]; then
   region=${MINIO_REGION:-us-east-1}
   MINIO_DOMAIN_SETTING="      MINIO_DOMAIN: s3.amazonaws.com,s3.${region}.amazonaws.com,s3-${region}.amazonaws.com
@@ -46,6 +50,7 @@ MINIO_DOCKER_SNIPPET=$(cat <<YAML
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
 ${MINIO_DOMAIN_SETTING}
+${MINIO_DATA_MOUNT}
     command: server /data --console-address :9001
     expose:
       - "9000"
@@ -111,6 +116,14 @@ data = json.loads(settings.read_text())
 data['encryptUploads'] = False
 settings.write_text(json.dumps(data, indent=4) + '\n')
 PY
+fi
+
+if [[ "${S3_MIGRATION_ENABLED:-false}" == "true" ]]; then
+  cat >> "${compose_override}" <<'YAML'
+
+volumes:
+  s3-migration-data:
+YAML
 fi
 
 settings_json="${RDM_ROOT}/addons/s3compat/static/settings.json"
