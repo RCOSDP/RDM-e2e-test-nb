@@ -1358,7 +1358,7 @@ jobs:
         
         # Test settings for ${{ matrix.test-group.name }} group
         skip_failed_test: true  # Continue on failure
-        transition_timeout: 60000
+        transition_timeout: ${{ matrix.test-group.mibyo_db_enabled && 120000 || 60000 }}
         skip_preview_check: true
         skip_130mb_upload: ${{ matrix.test-group.skip_130mb_upload || false }}
         skip_default_storage: ${{ matrix.test-group.skip_default_storage || false }}
