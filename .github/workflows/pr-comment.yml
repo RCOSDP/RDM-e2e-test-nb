@@ -43,7 +43,7 @@ jobs:
           // Build comment
           const comment = `## 📊 E2E Test Results
           
-          Excel summaries and screenshots are available as artifacts:
+          Excel summaries, screenshots, and procedure videos are available as artifacts:
           
           - [View all artifacts](${runUrl}#artifacts)
           

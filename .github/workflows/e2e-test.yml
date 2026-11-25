@@ -1603,7 +1603,7 @@ jobs:
         ls -la result/test-summary-*.xlsx || echo "No Excel summary generated"
         ls -la result/screenshots/ || echo "No screenshots generated"
 
-    - name: Upload Excel summary with screenshots
+    - name: Upload Excel summary with screenshots and procedure videos
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -1611,6 +1611,7 @@ jobs:
         path: |
           e2e-tests/result/test-summary-*.xlsx
           e2e-tests/result/screenshots/
+          e2e-tests/result/**/report.webm
         retention-days: 30
       id: excel-upload
 
