@@ -1,4 +1,5 @@
 """Record notebook cells' active pages with barcode identifiers in the video."""
+import asyncio
 import contextvars
 import functools
 import inspect
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import zxingcpp
 from playwright.async_api import (
-    Browser, Frame, Locator, LocatorAssertions, Page, PageAssertions, expect,
+    Browser, Error, Frame, Locator, LocatorAssertions, Page, PageAssertions, expect,
 )
 
 VIEWPORT = {'width': 1280, 'height': 720}
@@ -82,6 +83,13 @@ class Recorder:
         try:
             await page.wait_for_function('(src) => window.__setReportQR && window.__setReportQR(src)',
                                          arg=source)
+            if source:
+                # Playwright samples video at 25 fps. Let a new marker reach the
+                # recording before a click can close the tab or change document.
+                await asyncio.sleep(2 / 25)
+        except Error:
+            if source or not page.is_closed():
+                raise
         finally:
             self.guard.reset(reset)
 
@@ -142,7 +150,7 @@ class Recorder:
                             (Locator, lambda obj: obj.page)]:
             for name, method in vars(cls).items():
                 if (inspect.iscoroutinefunction(method) and not name.startswith('_')
-                    and name not in {'close', 'screenshot', 'add_init_script',
+                    and name not in {'close', 'screenshot', 'wait_for_load_state', 'add_init_script',
                                      'expose_binding', 'expose_function'}):
                     self.patch(cls, name, wrap(method, target))
         expect_type = type(expect)

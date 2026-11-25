@@ -113,10 +113,11 @@ def render(directory, font_path):
         caption = directory / f'caption-{token}.png'
         panel.save(caption)
         part = directory / f'part-{token}.webm'
-        filters = (f"[0:v]trim=start_frame={clip['start_frame']}:end_frame={clip['end_frame']},"
+        filters = (f"[0:v]trim=end_frame={clip['end_frame'] - clip['start_frame']},"
                    'setpts=PTS-STARTPTS,pad=1280:870:0:0:black[v];'
                    '[v][1:v]overlay=0:720:shortest=1')
-        encode('-i', directory / clip['file'], '-loop', '1', '-i', caption,
+        # Seek directly to the indexed frame in Playwright’s 25 fps recording.
+        encode('-ss', clip['start_frame'] / 25, '-i', directory / clip['file'], '-loop', '1', '-i', caption,
                '-filter_complex', filters, part)
         if previous_page is None or previous_page != segment['page']:
             # Fade still boundary frames; do not obscure any original action frames.
