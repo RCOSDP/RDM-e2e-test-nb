@@ -643,14 +643,6 @@ jobs:
         path: RDM-osf.io
         fetch-depth: 0
 
-    - name: Checkout WEKO repository
-      if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
-      uses: actions/checkout@v4
-      with:
-        repository: RCOSDP/weko
-        ref: develop_v2.0.0
-        path: weko
-
     - name: Checkout Flowable gateway repository
       if: env.FLOWABLE_ENABLED == 'true'
       uses: actions/checkout@v4
@@ -658,11 +650,19 @@ jobs:
         repository: RCOSDP/RDM-flowable-gateway
         path: RDM-flowable-gateway
 
-    - name: Prepare WEKO compose
+    - name: Prepare FakeWEKO
       if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
-      working-directory: e2e-tests
       run: |
-        .github/scripts/setup_weko.sh prepare ../weko
+        for role in ADMIN USER; do
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          echo "WEKO_${role}_PASSWORD=$password" >> "$GITHUB_ENV"
+        done
+        cp -r e2e-tests/docker/fakeweko weko
+        mkdir -p weko/nginx/keys
+        openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+          -keyout weko/nginx/keys/server.key -out weko/nginx/keys/server.crt \
+          -subj '/CN=192.168.168.167' -addext 'subjectAltName=IP:192.168.168.167,IP:127.0.0.1'
 
     - name: Prepare Flowable gateway
       if: env.FLOWABLE_ENABLED == 'true'
@@ -1300,20 +1300,20 @@ jobs:
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         test_rdm_endpoints
 
-    - name: Install WEKO stack
+    - name: Start FakeWEKO
       if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       working-directory: e2e-tests
       run: |
-        .github/scripts/setup_weko.sh install ../weko
+        docker compose -f ../weko/docker-compose2.yml up -d --build
+        curl --retry 20 --retry-connrefused --retry-delay 1 --cacert ../weko/nginx/keys/server.crt https://192.168.168.167
 
     - name: Configure WEKO connection info
       if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       run: |
+        echo "WEKO_TEST_SERVICE=true" >> $GITHUB_ENV
         echo "WEKO_URL=https://192.168.168.167" >> $GITHUB_ENV
         echo "WEKO_ADMIN_EMAIL=wekosoftware@nii.ac.jp" >> $GITHUB_ENV  # gitleaks:allow
-        echo "WEKO_ADMIN_PASSWORD=uspass123" >> $GITHUB_ENV
         echo "WEKO_USER_EMAIL=contributor@example.org" >> $GITHUB_ENV  # gitleaks:allow
-        echo "WEKO_USER_PASSWORD=uspass123" >> $GITHUB_ENV
         echo "WEKO_INSTITUTION_NAME=Virginia Tech [Test]" >> $GITHUB_ENV
         echo "WEKO_INDEX_NAME=Sample Index" >> $GITHUB_ENV
         echo "WEKO_DOCKER_COMPOSE_PATH=${{ github.workspace }}/weko/docker-compose2.yml" >> $GITHUB_ENV
@@ -1530,7 +1530,7 @@ jobs:
         
         # Test settings for ${{ matrix.test-group.name }} group
         skip_failed_test: true  # Continue on failure
-        transition_timeout: 60000
+        transition_timeout: ${{ matrix.test-group.mibyo_db_enabled && 120000 || 60000 }}
         skip_preview_check: true
         skip_130mb_upload: ${{ matrix.test-group.skip_130mb_upload || false }}
         skip_default_storage: ${{ matrix.test-group.skip_default_storage || false }}
