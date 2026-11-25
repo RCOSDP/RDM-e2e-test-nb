@@ -333,6 +333,19 @@ jobs:
             minio_enabled: true
             s3_minio_enabled: true
             member_display_enabled: false
+          - name: user-s3-minio-regional
+            display_name: "User Tests (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            minio_region: ap-northeast-1
+            member_display_enabled: false
           - name: admin-s3-minio
             display_name: "Institutional Storage (Amazon S3 via MinIO)"
             include_admin: true
