@@ -1358,7 +1358,7 @@ jobs:
         fi
 
     - name: Start MinIO trace
-      if: env.MINIO_ENABLED == 'true'
+      if: env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1827,7 +1827,7 @@ jobs:
         path: e2e-tests/s3-minio-proxy.log
 
     - name: Collect MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1837,7 +1837,7 @@ jobs:
         fi
 
     - name: Upload MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: minio-trace-${{ matrix.test-group.name }}
