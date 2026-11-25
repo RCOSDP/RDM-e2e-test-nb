@@ -233,9 +233,9 @@ create_docker_override() {
     local wb_image="${WB_IMAGE:-niicloudoperation/rdm-waterbutler:latest}"
     local elasticsearch_image="${ELASTICSEARCH_IMAGE:-elasticsearch:2}"
     local y_websocket_url="${Y_WEBSOCKET_URL:-}"
-    local admin_s3_region_setting=""
-    if [ "${S3_MINIO_INST_ENABLED:-false}" = "true" ]; then
-        admin_s3_region_setting="      AWS_DEFAULT_REGION: '${MINIO_REGION}'"
+    local s3_region_setting=""
+    if [ "${S3_MINIO_ENABLED:-false}" = "true" ]; then
+        s3_region_setting="      AWS_DEFAULT_REGION: '${MINIO_REGION}'"
     fi
 
     echo "Creating docker-compose override with:"
@@ -259,13 +259,14 @@ services:
     image: ${osf_image}
     environment:
       AWS_EC2_METADATA_DISABLED: "true"
-${admin_s3_region_setting}
+${s3_region_setting}
       KAKEN_ELASTIC_URI: http://kaken_elasticsearch:9200
   admin_assets:
     image: ${osf_image}
   api:
     image: ${osf_image}
     environment:
+${s3_region_setting}
       KAKEN_ELASTIC_URI: http://kaken_elasticsearch:9200
   assets:
     image: ${osf_image}
@@ -282,6 +283,7 @@ ${admin_s3_region_setting}
   web:
     image: ${osf_image}
     environment:
+${s3_region_setting}
       OAUTHLIB_INSECURE_TRANSPORT: '1'
       KAKEN_ELASTIC_URI: http://kaken_elasticsearch:9200
       Y_WEBSOCKET_URL: '${y_websocket_url}'

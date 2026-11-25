@@ -34,15 +34,28 @@ http {
         default other;
         ~^POST:. complete-multipart;
     }
+    # boto2 omits '=' for empty parameters. MinIO requires it for presigned
+    # SigV2 requests, but omits it when calculating the signature.
+    map "$s3_signature:$request_uri" $s3_location_uri {
+        default $request_uri;
+        ~^v2:(?<location_before>[^?]*[?](?:[^&]*&)*location)(?<location_after>&.*|$) $location_before=$location_after;
+    }
+    map "$s3_signature:$s3_location_uri" $s3_upstream_uri {
+        default $s3_location_uri;
+        ~^v2:(?<prefix_before>[^?]*[?](?:[^&]*&)*prefix)(?<prefix_after>&.*|$) $prefix_before=$prefix_after;
+    }
     log_format s3 '$request_method $host $uri $status operation=$s3_operation signature=$s3_signature';
     access_log /dev/stdout s3;
+    upstream minio_s3 {
+        server minio:9000;
+    }
     server {
         listen 443 ssl;
         ssl_certificate /certs/server.crt;
         ssl_certificate_key /certs/server.key;
         client_max_body_size 0;
         location / {
-            proxy_pass http://minio:9000;
+            proxy_pass http://minio_s3$s3_upstream_uri;
             proxy_set_header Host $http_host;
             proxy_set_header X-Forwarded-Proto https;
             proxy_http_version 1.1;

@@ -1541,8 +1541,8 @@ jobs:
       run: |
         log=../e2e-tests/result/s3-after/s3-minio-proxy.log
         docker-compose logs --no-color --no-log-prefix s3-minio-proxy > "$log"
-        rg 'signature=v4$' "$log"
-        if rg 'signature=v2$' "$log"; then
+        grep -q 'signature=v4$' "$log"
+        if grep -q 'signature=v2$' "$log"; then
           echo 'The upgraded version used Signature V2' >&2
           exit 1
         fi
@@ -1817,7 +1817,7 @@ jobs:
     - name: Verify multipart upload completion uses SigV4
       if: always() && env.S3_MINIO_ENABLED == 'true' && env.S3_MINIO_INST_ENABLED != 'true' && env.S3_MIGRATION_ENABLED != 'true'
       run: |
-        rg '^POST .+/multipart-check\.bin 200 operation=complete-multipart signature=v4$' e2e-tests/s3-minio-proxy.log
+        grep -E '^POST .+/multipart-check\.bin 200 operation=complete-multipart signature=v4$' e2e-tests/s3-minio-proxy.log
 
     - name: Upload Amazon S3 proxy log
       if: always() && env.S3_MINIO_ENABLED == 'true'
