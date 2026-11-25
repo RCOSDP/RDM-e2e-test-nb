@@ -93,9 +93,6 @@ async def run_pw(f, last_path=default_last_path, screenshot=True, permissions=No
     next_page = None
     if f is not None:
         try:
-            recorder = getattr(current_context, "_procedure_recorder", None)
-            if recorder is not None:
-                await recorder.focus(current_pages[-1])
             next_page = await f(current_pages[-1])
         except:
             try:

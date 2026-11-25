@@ -1,16 +1,13 @@
-"""Record notebook cells' active pages with QR identifiers in the video."""
-import base64
+"""Record notebook cells' active pages with barcode identifiers in the video."""
 import contextvars
 import functools
 import inspect
-import io
 import json
 import secrets
 import weakref
 from pathlib import Path
 
 import zxingcpp
-from PIL import Image
 from playwright.async_api import (
     Browser, Frame, Locator, LocatorAssertions, Page, PageAssertions, expect,
 )
@@ -21,20 +18,31 @@ INIT_SCRIPT = '''(() => {
   const host = document.createElement('div');
   host.style.cssText = 'display:none;position:fixed;bottom:8px;right:8px;z-index:2147483647;pointer-events:none';
   const root = host.attachShadow({mode:'open'});
-  const image = document.createElement('img');
-  image.style.cssText = 'display:block;width:165px;height:12px';
-  root.append(image);
+  const canvas = document.createElement('canvas');
+  canvas.height = 12;
+  canvas.style.display = 'block';
+  root.append(canvas);
   let explicitlySet = false;
-  const setQR = async (src) => {
-    host.style.display = src ? 'block' : 'none';
-    if (src) { image.src = src; await image.decode(); }
+  const setQR = (bars) => {
+    if (!document.documentElement) return false;
+    if (bars && host.parentNode !== document.documentElement) document.documentElement.append(host);
+    host.style.display = bars ? 'block' : 'none';
+    if (bars) {
+      canvas.width = bars.length;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'black';
+      for (let x = 0; x < bars.length; x++) {
+        if (bars[x] === '1') ctx.fillRect(x, 0, 1, canvas.height);
+      }
+    }
     return true;
   };
-  const mount = () => document.documentElement.append(host);
-  if (document.documentElement) mount();
-  else document.addEventListener('DOMContentLoaded', mount, {once:true});
-  window.__setReportQR = (src) => { explicitlySet = true; return setQR(src); };
-  window.__readReportQR().then(src => { if (!explicitlySet) return setQR(src); });
+  window.__setReportQR = (bars) => { explicitlySet = true; return setQR(bars); };
+  const restore = () => window.__readReportQR().then(bars => { if (!explicitlySet) setQR(bars); });
+  if (document.documentElement) restore();
+  else document.addEventListener('DOMContentLoaded', restore, {once:true});
 })();'''
 
 
@@ -62,7 +70,6 @@ class Recorder:
 
     async def attach(self, context):
         self.contexts.append(context)
-        context._procedure_recorder = self
         def marker(source):
             self.register_page(source['page'])
             return self.marker if source['page'] == self.active else ''
@@ -95,10 +102,8 @@ class Recorder:
         digits = f"{int(payload.replace(':', ''), 16):020d}"
         barcode = zxingcpp.create_barcode(digits, zxingcpp.BarcodeFormat.Code128)
         bars = zxingcpp.write_barcode_to_image(barcode)
-        image = Image.frombytes('L', (bars.shape[1], bars.shape[0]), bytes(bars))
-        png = io.BytesIO()
-        image.resize((165, 12), Image.Resampling.NEAREST).save(png, format='PNG')
-        self.marker = 'data:image/png;base64,' + base64.b64encode(png.getvalue()).decode()
+        row = bytes(bars)[:bars.shape[1]]
+        self.marker = ''.join('1' if pixel == 0 else '0' for pixel in row)
         self.active = page
         self.segments.append({'token': token, 'qr': payload,
                               'page': self.register_page(page), 'cell': self.cell['index']})
