@@ -315,6 +315,8 @@ class TestRunner:
                     s3compat_type_name_1=getattr(self, 's3compat_type_name_1', None) if storage_id == 's3compat' else None,
                     s3compat_type_name_2=getattr(self, 's3compat_type_name_2', None) if storage_id == 's3compat' else None,
                     skip_too_many_files_check=storage_info.get('skip_too_many_files_check', False),
+                    check_multipart_upload=storage_info.get('check_multipart_upload', False),
+                    s3_verification_ca_bundle=storage_info.get('s3_verification_ca_bundle'),
                 )
             )
             

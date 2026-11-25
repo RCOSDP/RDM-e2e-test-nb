@@ -60,12 +60,13 @@ if [[ "${S3_MINIO}" == "true" ]]; then
   if [[ "${S3_MINIO_INST_ENABLED:-false}" == "true" ]]; then
     printf '\nstorages_s3: []\ns3_institutional_storage_enabled: true\n' >> "${OUTPUT}"
   else
-    cat >> "${OUTPUT}" <<'EOF'
+    cat >> "${OUTPUT}" <<EOF
 
 storages_s3:
   - id: 's3'
     name: 'Amazon S3'
-    skip_too_many_files_check: true
+    check_multipart_upload: true
+    s3_verification_ca_bundle: '${S3_MINIO_CA_BUNDLE}'
 EOF
   fi
   cat >> "${OUTPUT}" <<EOF

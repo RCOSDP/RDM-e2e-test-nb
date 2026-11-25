@@ -30,7 +30,11 @@ http {
         ~AWSAccessKeyId= v2;
         ~^AWS\s v2;
     }
-    log_format s3 '$request_method $host $uri $status signature=$s3_signature';
+    map "$request_method:$arg_uploadId" $s3_operation {
+        default other;
+        ~^POST:. complete-multipart;
+    }
+    log_format s3 '$request_method $host $uri $status operation=$s3_operation signature=$s3_signature';
     access_log /dev/stdout s3;
     server {
         listen 443 ssl;
