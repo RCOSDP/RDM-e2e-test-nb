@@ -1567,6 +1567,7 @@ jobs:
         start_asset_services
         start_rdm_services
         S3_MIGRATION_LEGACY=true bash "$scripts/setup_s3_minio.sh" install "$PWD"
+        test_rdm_endpoints
 
     - name: Verify S3 data after rolling back
       if: env.S3_MIGRATION_ENABLED == 'true'
