@@ -41,13 +41,11 @@ c.JupyterHub.load_roles = [
     {'name': 'user', 'scopes': ['self', 'access:services!service=binder', 'access:services!service=rdm']},
 ]
 c.JupyterHub.services = [
+    # BinderHub runs in its own container, as with the BinderHub Helm chart.
     {'name': 'binder', 'admin': True, 'oauth_no_confirm': True,
-     'url': 'http://127.0.0.1:18010',
-     'oauth_redirect_uri': d['binder_origin']+'/oauth_callback',
-     'command': [sys.executable, '-m', 'binderhub', '--config='+str(root / 'binderhub_config.py'), '--port=18010'],
-     'environment': {'OAUTHLIB_INSECURE_TRANSPORT': '1',
-                     'JUPYTERHUB_HOST': d['hub_origin'],
-                     'JUPYTERHUB_OAUTH_CALLBACK_URL': d['binder_origin']+'/oauth_callback'}},
+     'url': 'http://127.0.0.1:18010', 'api_token': d['binder_api_token'],
+     'oauth_client_id': 'service-binder',
+     'oauth_redirect_uri': d['binder_origin']+'/oauth_callback'},
     {'name': 'rdm', 'api_token': d['hub_secret'], 'oauth_client_id': 'service-rdm',
      'oauth_redirect_uri': d['rdm_origin']+'/project/binderhub/callback', 'oauth_no_confirm': False},
     {'name': 'rdm-token-admin', 'admin': True, 'api_token': d['admin_token']},

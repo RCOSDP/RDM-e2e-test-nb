@@ -7,7 +7,8 @@ import asyncio
 from pathlib import Path
 import re
 
-from binderhub.binderspawner_mixin import BinderSpawnerMixin
+# Copied from the BinderHub image, as the BinderHub Helm chart does for its Hub.
+from binderspawner_mixin import BinderSpawnerMixin
 from docker.types import Mount
 from dockerspawner import DockerSpawner
 

@@ -18,6 +18,11 @@ c.BinderHub.base_url = '/'
 c.HubOAuth.base_url = '/'
 c.HubOAuth.hub_host = d['hub_origin']
 c.HubOAuth.oauth_redirect_uri = d['binder_origin']+'/oauth_callback'
+# Registered as an external service of the Hub container (jupyterhub_config.py).
+c.HubOAuth.api_url = f"http://{d['host_ip']}:18081/hub/api/"
+c.HubOAuth.api_token = d['binder_api_token']
+c.HubOAuth.oauth_client_id = 'service-binder'
+c.BinderHub.hub_api_token = d['binder_api_token']
 c.BinderHub.hub_url = d['hub_origin'] + '/'
 c.BinderHub.auth_enabled = True
 c.Launcher.allow_named_servers = True

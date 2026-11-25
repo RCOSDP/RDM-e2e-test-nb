@@ -29,6 +29,7 @@ def main():
              rdm_api=args.rdm_api, host_ip=args.host_ip, username='rdm-e2e',
              password=secrets.token_urlsafe(24), binder_secret=secrets.token_hex(32),
              hub_secret=secrets.token_hex(32), admin_token=secrets.token_hex(32),
+             binder_api_token=secrets.token_hex(32),
              mount_root=str(state.resolve() / 'rdmfs'))
     (state / 'config.json').write_text(json.dumps(d, indent=2)+'\n')
     bh = d['binder_origin']
@@ -45,7 +46,7 @@ def main():
         out.write('\n# Local OAuth E2E configuration\n')
         out.write('\n'.join(f'{key} = {value!r}' for key, value in settings.items())+'\n')
     if os.environ.get('GITHUB_ACTIONS') == 'true':
-        for key in ('password', 'binder_secret', 'hub_secret', 'admin_token'):
+        for key in ('password', 'binder_secret', 'hub_secret', 'admin_token', 'binder_api_token'):
             print('::add-mask::'+d[key])
     print('Prepared BinderHub/JupyterHub and RDM OAuth settings')
 
