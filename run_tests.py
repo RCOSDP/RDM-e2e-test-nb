@@ -15,6 +15,7 @@ import subprocess
 import shutil
 from datetime import datetime
 import papermill as pm
+from scripts.video_engine import execute_notebook
 import nbformat
 
 
@@ -210,7 +211,7 @@ class TestRunner:
             subprocess.run(['df', '-h'])
         
         try:
-            pm.execute_notebook(
+            execute_notebook(
                 base_notebook,
                 result_notebook,
                 parameters=params

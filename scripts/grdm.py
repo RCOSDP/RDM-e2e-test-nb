@@ -9,6 +9,19 @@ import traceback
 from playwright.async_api import expect
 
 
+def terms_banner(page):
+    return page.locator(
+        '#alert-container:has(input#accept[type="checkbox"]):has(button#continue), '
+        '[data-analytics-scope="ToS consent banner"] .jumbotron:has(input[name="acceptedTermsOfService"])'
+    )
+
+
+async def accept_terms(banner):
+    await banner.get_by_role('checkbox').check()
+    await banner.locator('button#continue, button[data-analytics-name="Continue"]').click()
+    await expect(banner).to_be_hidden()
+
+
 async def login_cas(page, username, password):
     # find_element_by_xpath_with_retry(driver, '').send_keys(username)
     # find_element_by_xpath_with_retry(driver, '//input[@name = "password"]').send_keys(password)

@@ -801,6 +801,8 @@ jobs:
       working-directory: e2e-tests
       run: |
         # Install without cache to save disk space
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg fonts-noto-cjk
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
         pip install --no-cache-dir papermill

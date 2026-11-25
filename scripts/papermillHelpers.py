@@ -4,6 +4,7 @@ import os
 import traceback
 from typing import Callable
 import papermill as pm
+from scripts.video_engine import execute_notebook
 import shutil
 import yaml
 
@@ -47,7 +48,7 @@ def run_notebook(
         params.update(extra_params)
 
     try:
-        pm.execute_notebook(base_notebook, result_notebook, parameters=params)
+        execute_notebook(base_notebook, result_notebook, parameters=params)
     except pm.PapermillExecutionError:
         if not skip_failed_test:
             raise
