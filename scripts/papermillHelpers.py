@@ -48,7 +48,7 @@ def run_notebook(
         params.update(extra_params)
 
     try:
-        execute_notebook(base_notebook, result_notebook, parameters=params)
+        execute_notebook(base_notebook, result_notebook, parameters=params, skip_failed_test=skip_failed_test)
     except pm.PapermillExecutionError:
         if not skip_failed_test:
             raise

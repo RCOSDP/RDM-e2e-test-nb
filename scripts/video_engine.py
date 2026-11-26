@@ -1,5 +1,7 @@
 """Execute a procedure with Papermill and save its captioned browser recording."""
 import json
+import logging
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -24,7 +26,10 @@ class VideoClient(PapermillNotebookClient):
         try:
             super().papermill_execute_cells()
         finally:
-            self.control('await _video.finish()')
+            try:
+                self.control('await _video.finish()')
+            except RuntimeError as error:
+                (Path(self.directory) / 'capture-error.txt').write_text(str(error))
 
     def execute_cell(self, cell, index, **kwargs):
         source = cell.source
@@ -52,16 +57,30 @@ class VideoEngine(NBClientEngine):
         return client.execute()
 
 
-def execute_notebook(base_notebook, result_notebook, parameters):
+def execute_notebook(base_notebook, result_notebook, parameters, skip_failed_test=False):
     papermill_engines.register('procedure-video', VideoEngine)
     output = Path(parameters['default_result_path']) / 'report.webm'
     output.parent.mkdir(parents=True, exist_ok=True)
+    warning = output.with_name('report-video-error.txt')
+    warning.unlink(missing_ok=True)
+    output.unlink(missing_ok=True)
     with TemporaryDirectory(dir=output.parent) as scratch:
         directory = Path(scratch).resolve()
         try:
-            return pm.execute_notebook(base_notebook, result_notebook, parameters=parameters,
+            result = pm.execute_notebook(base_notebook, result_notebook, parameters=parameters,
                                        engine_name='procedure-video', video_directory=str(directory))
         finally:
             manifest = directory / 'recording.json'
-            if manifest.exists() and json.loads(manifest.read_text())['segments']:
-                render(directory, '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc').replace(output)
+            capture_error = directory / 'capture-error.txt'
+            try:
+                if capture_error.exists():
+                    raise RuntimeError(capture_error.read_text())
+                if manifest.exists() and json.loads(manifest.read_text())['segments']:
+                    render(directory, '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc').replace(output)
+            except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
+                message = f'動画生成失敗: {error}'
+                warning.write_text(message)
+                logging.warning('%s: %s', result_notebook, message)
+    if warning.exists() and not skip_failed_test:
+        raise RuntimeError(warning.read_text())
+    return result

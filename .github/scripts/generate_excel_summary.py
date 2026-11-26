@@ -122,6 +122,7 @@ def create_workbook(all_test_sets, author, ticket_number, result_dir):
     
     for notebook_file, (cells, test_sets) in all_test_sets:
         print(f"Processing {notebook_file}...")
+        video_warning = Path(notebook_file).with_suffix('') / 'report-video-error.txt'
         sheetname = '_'.join(os.path.splitext(os.path.split(notebook_file)[-1])[0].split('-')[1:][::-1][:2])
         
         for i, ((start, header), (end, _)) in enumerate(zip(test_sets, test_sets[1:])):
@@ -283,6 +284,8 @@ def create_workbook(all_test_sets, author, ticket_number, result_dir):
             summary_sheet[f'H{summaryrow}'] = f'参照: {test_id}'
             summary_sheet[f'H{summaryrow}'].hyperlink = f'#{test_id}!A1'
             summary_sheet[f'I{summaryrow}'] = '成功' if not has_error else '失敗'
+            if video_warning.exists():
+                summary_sheet[f'M{summaryrow}'] = video_warning.read_text()
             summary_sheet[f'J{summaryrow}'] = ticket_number
             summary_sheet[f'K{summaryrow}'] = author
             summary_sheet[f'L{summaryrow}'] = datetime.now().strftime('%Y-%m-%d')
