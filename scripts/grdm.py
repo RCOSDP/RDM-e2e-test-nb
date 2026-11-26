@@ -770,3 +770,89 @@ async def move_file_to_storage(page, provider, filename_move):
     await page.reload()
     
     await expect(get_select_file_title_locator(page, filename_move)).to_be_visible(timeout=transition_timeout * 5)
+
+
+async def verify_download_log(page, username, rdm_project_name, path, target_storage_id, is_zip_download, bucket, expected_count=1, transition_timeout=60000):
+    storage_templates = {
+        "osfstorage": (
+            f"{username}が{rdm_project_name}のNII Storageからファイル{path}をダウンロードしました",
+            f"{username}が{rdm_project_name}のNII Storageからフォルダ{path}をZIPとしてダウンロードしました",
+        ),
+        "s3": (
+            f"{username}が{rdm_project_name}のAmazon S3バケット{bucket}からファイル{path}をダウンロードしました",
+            f"{username}が{rdm_project_name}のAmazon S3バケット{bucket}からフォルダ{path}をZIPとしてダウンロードしました",
+        ),
+        "s3compat": (
+            f"{username}が{rdm_project_name}のS3互換ストレージバケット({bucket})からファイル({path})をダウンロードしました",
+            f"{username}が{rdm_project_name}のS3互換ストレージバケット({bucket})からフォルダ({path})をZIPとしてダウンロードしました",
+        ),
+        "s3compatsigv4": (
+            f"{username}が{rdm_project_name}のS3互換ストレージ(SigV4)バケット({bucket})からファイル({path})をダウンロードしました",
+            f"{username}が{rdm_project_name}のS3互換ストレージ(SigV4)バケット({bucket})からフォルダ({path})をZIPとしてダウンロードしました",
+        ),
+        "dropbox": (
+            f"{username}が{rdm_project_name}のDropboxからファイル{path}をダウンロードしました",
+            f"{username}が{rdm_project_name}のDropboxからフォルダ{path}をZIPとしてダウンロードしました",
+        ),
+        "googledrive": (
+            f"{username}が{rdm_project_name}のGoogle Driveからファイル{path}をダウンロードしました",
+            f"{username}が{rdm_project_name}のGoogle Driveからフォルダ{path}をZIPとしてダウンロードしました",
+        ),
+        "onedrive": (
+            f"{username}が{rdm_project_name}のMicrosoft OneDriveからファイル{path}をダウンロードしました",
+            f"{username}が{rdm_project_name}のMicrosoft OneDriveからフォルダ{path}をZIPとしてダウンロードしました",
+        ),
+        "nextcloud": (
+            f"{username}が{rdm_project_name}のNextcloudからファイル{path}をダウンロードしました",
+            f"{username}が{rdm_project_name}のNextcloudからフォルダ{path}をZIPとしてダウンロードしました",
+        ),
+    }
+
+    if target_storage_id not in storage_templates:
+        print(target_storage_id)
+        return
+    
+    file_msg, zip_msg = storage_templates[target_storage_id]
+    expected_message = zip_msg if is_zip_download else file_msg
+    await expect(page.locator("#logFeed").get_by_text(expected_message)).to_have_count(expected_count, timeout=transition_timeout)
+
+
+async def verify_open_onlyoffice_log(page, username, rdm_project_name, path, target_storage_id, total_number_open_onlyoffice_log, transition_timeout=60000):
+    storage_templates = {
+        "osfstorage": f"{username}が{rdm_project_name}のNII Storageのファイル{path}をONLYOFFICEで開きました",
+        "s3": f"{username}が{rdm_project_name}のAmazon S3のファイル{path}をONLYOFFICEで開きました",
+        "s3compat": f"{username}が{rdm_project_name}のS3 Compatible Storageのファイル{path}をONLYOFFICEで開きました",
+        "s3compatsigv4": f"{username}が{rdm_project_name}のS3 Compatible Storage (SigV4)のファイル{path}をONLYOFFICEで開きました",
+        "dropbox": f"{username}が{rdm_project_name}のDropboxのファイル{path}をONLYOFFICEで開きました",
+        "googledrive": f"{username}が{rdm_project_name}のGoogle Driveのファイル{path}をONLYOFFICEで開きました",
+        "onedrive": f"{username}が{rdm_project_name}のOneDriveのファイル{path}をONLYOFFICEで開きました",
+        "nextcloud": f"{username}が{rdm_project_name}のNextcloudのファイル{path}をONLYOFFICEで開きました",
+    }
+
+    if target_storage_id not in storage_templates:
+        print(target_storage_id)
+        return
+
+    await page.locator("#logFeed").scroll_into_view_if_needed(timeout=transition_timeout)
+    expected_message = storage_templates[target_storage_id]
+    await expect(page.locator("#logFeed").get_by_text(expected_message)).to_have_count(total_number_open_onlyoffice_log, timeout=transition_timeout)
+
+
+async def verify_add_file_log(page, username, rdm_project_name, path, target_storage_id, bucket, transition_timeout=60000):
+    storage_templates = {
+        "osfstorage": f"{username}が{rdm_project_name}のNII Storageにファイル{path}を追加しました",
+        "s3": f"{username}がファイル({path})を{rdm_project_name}のAmazon S3バケット({bucket})に追加しました",
+        "s3compat": f"{username}がファイル({path})を{rdm_project_name}のS3互換ストレージバケット({bucket})に追加しました",
+        "s3compatsigv4": f"{username} added file {path} to S3 Compatible Storage (SigV4) bucket {bucket} in {rdm_project_name}",
+        "dropbox": f"{username}がファイル{path}を{rdm_project_name}のDropboxに追加しました",
+        "googledrive": f"{username}がファイル({path})を{rdm_project_name}のGoogle Driveに追加しました",
+        "onedrive": f"{username}が{rdm_project_name}のMicrosoft OneDriveにファイル({path})を追加しました",
+        "nextcloud": f"{username}が{rdm_project_name}のNextcloudにファイル({path})を追加しました",
+    }
+
+    if target_storage_id not in storage_templates:
+        print(target_storage_id)
+        return
+
+    expected_message = storage_templates[target_storage_id]
+    await expect(page.locator("#logFeed")).to_contain_text(expected_message, timeout=transition_timeout)

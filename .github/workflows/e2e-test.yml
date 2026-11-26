@@ -195,6 +195,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: true
             mapcore_group_enabled: false
@@ -213,6 +214,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -229,6 +231,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -275,6 +278,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -305,6 +309,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -324,6 +329,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -342,6 +348,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -360,6 +367,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -378,6 +386,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -395,6 +404,7 @@ jobs:
             jupyterhub_enabled: true
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -413,6 +423,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: roles
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -431,6 +442,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: forms
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -450,6 +462,7 @@ jobs:
             workflow_test_mode: batch
             workflow_batch_project_count: 50
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -467,6 +480,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: true
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -485,6 +499,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
@@ -502,6 +517,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: true
@@ -520,7 +536,28 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            download_history_enabled: false
             institutional_admin_authorization_enabled: true
+            member_display_enabled: false
+            mapcore_group_enabled: false
+          - name: user-download-history
+            display_name: "User Tests (Download History)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3compatsigv4_enabled: true
+            weko_enabled: false
+            mibyo_db_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
+            download_history_enabled: true
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
     name: E2E ${{ matrix.test-group.display_name }}
@@ -1540,6 +1577,7 @@ jobs:
         weko_enabled: ${{ matrix.test-group.weko_enabled == true }}
         weko_test_mode: ${{ matrix.test-group.weko_test_mode || 'direct' }}
         mibyo_db_enabled: ${{ matrix.test-group.mibyo_db_enabled == true }}
+        download_history_enabled: ${{ matrix.test-group.download_history_enabled == true }}
         member_display_enabled: ${{ matrix.test-group.member_display_enabled == true }}
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
