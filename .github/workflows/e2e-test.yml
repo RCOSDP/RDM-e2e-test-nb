@@ -178,7 +178,7 @@ jobs:
   e2e-test:
     needs: build-images
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: ${{ matrix.test-group.timeout_minutes || 120 }}
     strategy:
       fail-fast: false
       matrix:
@@ -245,6 +245,7 @@ jobs:
               テスト手順-管理者機能-証跡管理.ipynb
               テスト手順-管理者機能-NIIストレージのクォータ.ipynb
           - name: migration-from-20250906
+            timeout_minutes: 210
             display_name: "Migration Test from 20250906"
             include_admin: true
             migration_from:
@@ -435,6 +436,7 @@ jobs:
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-batch
+            timeout_minutes: 210
             display_name: "User Tests (Flowable Batch)"
             include_admin: true
             skip_admin: true
