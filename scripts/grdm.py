@@ -610,24 +610,20 @@ async def open_edit_wiki(page, transition_timeout=60000):
     await expect(page.locator('#mEditor .ProseMirror[contenteditable="true"]')).to_be_visible(timeout=transition_timeout)
 
 async def select_text_range(page, text, transition_timeout=60000):
-    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
-    await editor_locator.focus()
-    await editor_locator.evaluate("""
-    (el, targetText) => {
-        const p = Array.from(el.querySelectorAll('p')).find(par => par.innerText === targetText);
-        if (!p) return;
-        let textNode = p.firstChild;
-        if (textNode.nodeType !== Node.TEXT_NODE) {
-            textNode = textNode.firstChild;
-        }
+    editor = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    paragraph = editor.locator('p').filter(has_text=re.compile(rf'^{re.escape(text)}$'))
+    await expect(paragraph).to_be_visible(timeout=transition_timeout)
+    await editor.focus()
+    await paragraph.evaluate("""
+    paragraph => {
         const range = document.createRange();
-        range.setStart(textNode, 0);
-        range.setEnd(textNode, textNode.length);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+        range.selectNodeContents(paragraph);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
     }
-    """, text)
+    """)
+
 
 async def fill_text(page, text, transition_timeout=60000):
     editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
@@ -654,7 +650,8 @@ async def click_wiki_menu_save(page, menu_list, transition_timeout=60000):
 
         raise ValueError(f"Menu item '{menu}' not found in wiki menu bar.")
 
-    await page.locator('//input[@type="submit" and @value="保存"]').click()
+    async with page.expect_navigation(timeout=transition_timeout):
+        await page.locator('#mEditorFooter input[type="submit"][value="保存"]').click()
     await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
 
 async def set_text_color(color_input, r, g, b):

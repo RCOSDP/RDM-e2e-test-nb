@@ -75,6 +75,11 @@ on:
         options:
           - 'false'
           - 'true'
+      skip_wiki_collaboration:
+        description: 'Skip the Wiki tests that edit the same page in two tabs'
+        required: false
+        default: true
+        type: boolean
       wiki_repository:
         description: 'RDM-wiki-frontend repository (default: RCOSDP/RDM-wiki-frontend)'
         required: false
@@ -1546,6 +1551,7 @@ jobs:
         member_display_enabled: ${{ matrix.test-group.member_display_enabled == true }}
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
+        skip_wiki_collaboration: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_wiki_collaboration }}
         institutional_admin_authorization_enabled: ${{ matrix.test-group.institutional_admin_authorization_enabled == true }}
         storages_oauth: []
         mapcore_group_enabled: ${{ matrix.test-group.mapcore_group_enabled == true }}
