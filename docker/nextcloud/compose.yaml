@@ -1,0 +1,23 @@
+services:
+  nextcloud:
+    image: nextcloud:35.0.2-apache
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        a2enmod ssl
+        a2ensite default-ssl
+        exec /entrypoint.sh apache2-foreground
+    ports:
+      - '18443:443'
+    environment:
+      NEXTCLOUD_ADMIN_USER: ${NEXTCLOUD_USERNAME:?}
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_PASSWORD:?}
+      SQLITE_DATABASE: nextcloud
+      NEXTCLOUD_TRUSTED_DOMAINS: 192.168.168.167
+      OVERWRITEPROTOCOL: https
+    volumes:
+      - nextcloud_data:/var/www/html
+      - ./.state/server.crt:/etc/ssl/certs/ssl-cert-snakeoil.pem:ro
+      - ./.state/server.key:/etc/ssl/private/ssl-cert-snakeoil.key:ro
+volumes:
+  nextcloud_data:
