@@ -134,6 +134,38 @@ async def expect_anonymous_toppage(page, idp_name, transition_timeout=30000):
     else:
         await expect(page.locator('#wayf_submit_button')).to_be_visible(timeout=transition_timeout)
 
+def assert_not_production_url(*urls, forbidden_patterns):
+    """実行対象URLが本番相当のパターンに一致しないことを確認し、誤った環境でのGDPR delete等を防ぐ。"""
+    # 文字列を渡すと1文字ずつ走査され、意図しない一致判定になるため、型を明示的に検査する
+    assert isinstance(forbidden_patterns, (list, tuple)), (
+        f'forbidden_patterns はリスト(またはタプル)で指定してください。'
+        f'1件のみの場合も ["..."] の形式で指定すること (指定値: {forbidden_patterns!r})'
+    )
+    assert forbidden_patterns, (
+        'forbidden_patterns が空です。本番相当のURLパターンを1つ以上指定してください。'
+    )
+    assert all(isinstance(pattern, str) and pattern for pattern in forbidden_patterns), (
+        f'forbidden_patterns の要素は空でない文字列で指定してください (指定値: {forbidden_patterns!r})'
+    )
+    for url in urls:
+        if not url:
+            continue
+        for pattern in forbidden_patterns:
+            assert pattern not in url, (
+                f'このテストは本番相当の環境では実行できません '
+                f'(forbidden pattern: {pattern!r}, url: {url!r})'
+            )
+
+async def assert_user_detail_matches(page, *, email=None, transition_timeout=30000):
+    """ユーザ詳細画面の「ユーザ名」欄を確認し、GDPR delete等での対象取り違えを防ぐ。"""
+    # 照合条件が無いまま呼ばれると「確認済み」と誤認されるため、条件の指定を必須とする
+    assert email is not None, (
+        'assert_user_detail_matches に照合条件が指定されていません。'
+        '対象の取り違えを防ぐためのチェックのため、email を必ず指定してください。'
+    )
+    username_value = page.locator('//tr[td[1][normalize-space()="ユーザ名"]]/td[2]')
+    await expect(username_value).to_have_text(email, timeout=transition_timeout)
+
 async def _login_idp_pw(page, idp_name, idp_username, idp_password, transition_timeout=30000):
     login_proc = _login_handlers[idp_name]
     await login_proc(page, idp_username, idp_password, transition_timeout)
@@ -489,6 +521,81 @@ async def verify_property_folder_info(
     await expect(locator_path).to_have_text(folderpath)
 
     time.sleep(1)
+
+async def go_to_profile(page, transition_timeout=30000):
+    """プロフィールページに移動し、ストレージ使用率を返す"""
+    ember_profile_dropdown = page.locator('//a[@data-test-auth-dropdown-toggle]')
+    if await ember_profile_dropdown.count() > 0:
+        await ember_profile_dropdown.click()
+        await page.locator('//*[@data-test-ad-my-profile]').click()
+    else:
+        await page.locator('//div[@class = "nav-profile-name"]').click()
+        await page.locator('//a[contains(@href, "/profile/")]').click()
+
+    storage_locator = page.locator('//h2[contains(., "ストレージ使用率")]')
+    await expect(storage_locator).to_be_visible(timeout=transition_timeout)
+
+    # ストレージ使用率のテキストを取得して "ストレージ使用率" 部分を除去
+    # 例: "0.0%, 0[B] / 1[GB]"
+    storage_text = await storage_locator.text_content()
+    storage_usage = storage_text.replace('ストレージ使用率', '').strip()
+    print(f'ストレージ使用率: {storage_usage}')
+    return storage_usage
+
+# ストレージ使用率の単位は SI (1 KB = 1000 B, 1 MB = 1000000 B, ...)
+_UNIT_MULTIPLIERS = {'B': 1, 'KB': 1000, 'MB': 1000000, 'GB': 1000000000, 'TB': 1000000000000}
+
+def parse_usage_bytes(usage_str):
+    """Parse storage usage string like "5.0%, 50[MB] / 1[GB]" -> used bytes (int).
+
+    The quota system uses SI units (1 KB = 1000 B, 1 MB = 1_000_000 B, etc.).
+    """
+    used_part = usage_str.split('/')[0]
+    m = re.search(r'([\d.]+)\[(\w+)\]', used_part)
+    if not m:
+        raise ValueError(f'Cannot parse storage usage: {usage_str!r}')
+    value, unit = float(m.group(1)), m.group(2).upper()
+    return int(value * _UNIT_MULTIPLIERS[unit])
+
+def usage_unit_multiplier(usage_str):
+    """表示文字列(例 "2.1%, 2.1[GB] / 100[GB]")の使用量側の単位倍率を返す。
+
+    丸めステップ(=単位の0.1)の算出に使う。
+    """
+    used_part = usage_str.split('/')[0]
+    m = re.search(r'[\d.]+\[(\w+)\]', used_part)
+    if not m:
+        raise ValueError(f'Cannot parse storage usage unit: {usage_str!r}')
+    return _UNIT_MULTIPLIERS[m.group(1).upper()]
+
+def assert_usage_delta(before_text, after_text, expected_delta_bytes, label):
+    """UI 表示(小数1桁丸め)同士で増減量(delta)と方向を検証する。
+
+    観測 delta = parse(after) - parse(before)。expected_delta_bytes には file の
+    実バイト数(binary, 符号付き)をそのまま渡す。**丸めずに実バイト数と比較する**のが要点で、
+    許容差は表示1ステップ(=単位の0.1)を動的に算出して用いる(ハードコードしない)。
+
+    binary の実サイズは SI 1ステップよりわずかに大きい(例: 100MiB=104,857,600B > 100MB)。
+    この余剰のおかげで「再計算されず増減ゼロ」のデグレ(observed=0)は
+    |0 - 104.86MB| > 100MB となり検出できる。一方、正しい増減なら観測値は実バイト数から
+    1ステップ未満しかずれない(二重丸めの揺れは1ステップ以内)ため PASS する。
+    """
+    before = parse_usage_bytes(before_text)
+    after = parse_usage_bytes(after_text)
+    observed = after - before
+    step = usage_unit_multiplier(after_text) // 10  # 表示1ステップ = 0.1単位
+    print(f'[{label}] observed_delta={observed} bytes, expected={expected_delta_bytes} bytes, '
+          f'許容=±{step} bytes(表示1ステップ)')
+    assert abs(observed - expected_delta_bytes) <= step, \
+        (f'{label}: ストレージ使用率の変化量が正しくありません: '
+         f'観測={observed} bytes, 期待={expected_delta_bytes} bytes, 許容=±{step} bytes')
+
+async def expand_folder_if_collapsed(page, folder_name, transition_timeout=30000):
+    """フォルダが折りたたまれている場合のみ展開する"""
+    collapsed_toggle = get_select_folder_toggle_locator(page, folder_name, collapsed=True)
+    if await collapsed_toggle.count() > 0:
+        await collapsed_toggle.click()
+    await expect(get_select_folder_toggle_locator(page, folder_name, expanded=True)).to_be_visible(timeout=transition_timeout)
 
 async def open_wiki(page, wikiname, text, transition_timeout=60000):
     await page.locator(f'//*[contains(@class, "title-text")]//a[text()="{wikiname}"]').click()
