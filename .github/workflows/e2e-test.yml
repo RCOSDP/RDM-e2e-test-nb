@@ -276,9 +276,10 @@ jobs:
             mapcore_group_enabled: false
           - name: migration-s3-sigv4
             display_name: "S3 SigV4 migration and rollback"
-            include_admin: false
+            include_admin: true
             minio_enabled: true
             s3_minio_enabled: true
+            s3_minio_institutional: true
             s3_migration: true
             migration_from:
               repository: RCOSDP/RDM-osf.io
@@ -973,6 +974,20 @@ jobs:
           -p s3_access_key s3migrationa -p s3_secret_key s3-fixture-secret-a -p s3_bucket s3-e2e-a \
           -p default_result_path ../result/s3-before -p close_on_fail True
 
+    - name: Configure institutional S3 on the migration source
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        mkdir -p result/s3-before/institutional
+        papermill 取りまとめ-機関ストレージ.ipynb result/s3-before/institutional/取りまとめ-機関ストレージ.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p admin_rdm_url http://192.168.168.167:8001/ \
+          -p idp_name_1 FakeCAS -p idp_username_1 teststaff@example.com -p idp_password_1 testpass789 \
+          -p member_idp_username testuser2@example.com -p member_idp_password testpass456 \
+          -p storage_provider s3 -p institutional_storage_name 'Institutional S3 Migration Storage' \
+          -p s3_access_key s3migrationb -p s3_secret_key s3-fixture-secret-b -p s3_bucket s3-e2e-b \
+          -p rdm_project_prefix TEST-Institutional-S3-Migration -p prepare_migration True \
+          -p default_result_path result/s3-before/institutional -p close_on_fail True
+
     - name: Stop migration source environment
       if: matrix.test-group.migration_from != null
       working-directory: RDM-osf.io
@@ -1535,13 +1550,31 @@ jobs:
           -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
           -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after -p close_on_fail True
 
+    - name: Verify institutional S3 data after upgrading
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-after/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-after/institutional/テスト手順-S3移行後.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' -p target_file_name test_institutional_storage.txt \
+          -p target_file_content 'S3 institutional storage migration fixture' \
+          -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after/institutional -p close_on_fail True
+
     - name: Verify upgraded S3 requests use SigV4
       if: env.S3_MIGRATION_ENABLED == 'true'
       working-directory: RDM-osf.io
       run: |
         log=../e2e-tests/result/s3-after/s3-minio-proxy.log
         docker-compose logs --no-color --no-log-prefix s3-minio-proxy > "$log"
-        grep -q 'signature=v4$' "$log"
+        for bucket in s3-e2e-a s3-e2e-b; do
+          if ! grep -Eq "^[^ ]+ (${bucket}\.[^ ]+ |[^ ]+ /${bucket}(/| ))[^[:cntrl:]]*signature=v4$" "$log"; then
+            echo "No Signature V4 request recorded for ${bucket}" >&2
+            exit 1
+          fi
+        done
         if grep -q 'signature=v2$' "$log"; then
           echo 'The upgraded version used Signature V2' >&2
           exit 1
@@ -1553,6 +1586,7 @@ jobs:
       run: |
         docker-compose down
         git checkout -f "${{ matrix.test-group.migration_from.commit }}"
+        export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         export OSF_IMAGE="${{ matrix.test-group.migration_from.osf_image }}"
         export EMBER_IMAGE="${{ matrix.test-group.migration_from.ember_image }}"
         export CAS_IMAGE="${{ matrix.test-group.migration_from.cas_image }}"
@@ -1579,6 +1613,19 @@ jobs:
           -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
           -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
           -p default_result_path ../result/s3-rollback -p close_on_fail True
+
+    - name: Verify institutional S3 data after rolling back
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-rollback/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-rollback/institutional/テスト手順-S3ロールバック.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' \
+          -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
+          -p default_result_path ../result/s3-rollback/institutional -p close_on_fail True
 
     - name: Prepare test configuration
       if: env.S3_MIGRATION_ENABLED != 'true'
