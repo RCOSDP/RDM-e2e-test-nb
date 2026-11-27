@@ -1,0 +1,17 @@
+# The deployed Hub image, extended with the local spawner of the E2E stack.
+ARG JUPYTERHUB_IMAGE
+ARG BINDERHUB_IMAGE
+FROM ${BINDERHUB_IMAGE} AS binderhub
+RUN cp "$(python -c 'import binderhub.binderspawner_mixin as m; print(m.__file__)')" /binderspawner_mixin.py
+
+FROM ${JUPYTERHUB_IMAGE}
+# The spawner talks to the host daemon through its root-owned socket.
+USER root
+# The Helm charts run the proxy in its own pod; this stack runs it next to the Hub.
+RUN npm install -g configurable-http-proxy
+RUN pip install --no-cache-dir dockerspawner && pip check
+WORKDIR /opt/e2e
+# The BinderHub Helm chart embeds this mixin into the Hub configuration in the same way.
+COPY --from=binderhub /binderspawner_mixin.py ./
+COPY jupyterhub_config.py rdm_spawner.py ./
+CMD ["jupyterhub", "--config=/opt/e2e/jupyterhub_config.py"]

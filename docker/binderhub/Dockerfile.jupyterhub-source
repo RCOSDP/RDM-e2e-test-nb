@@ -1,0 +1,12 @@
+# The deployed Hub image with JupyterHub reinstalled from the build context (a CS-jupyterhub tree).
+ARG JUPYTERHUB_IMAGE
+FROM ${JUPYTERHUB_IMAGE} AS build
+USER root
+COPY . /src
+RUN pip wheel --no-deps --wheel-dir /wheels /src
+
+FROM ${JUPYTERHUB_IMAGE}
+USER root
+RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
+    pip install --no-cache-dir /wheels/jupyterhub-*.whl && pip check
+USER jovyan

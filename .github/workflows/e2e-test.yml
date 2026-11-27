@@ -67,6 +67,22 @@ on:
         description: 'RDMFS Docker image (default: gcr.io/nii-ap-ops/rdmfs:2026.02.1)'
         required: false
         default: ''
+      binderhub_image:
+        description: 'BinderHub image (default: gcr.io/nii-ap-ops/k8s-binderhub-binderhub:0.2.5-20261111)'
+        required: false
+        default: ''
+      binderhub_jupyterhub_image:
+        description: 'JupyterHub image for the BinderHub tests (default: gcr.io/nii-ap-ops/k8s-hub:4.1.0-20261106)'
+        required: false
+        default: ''
+      binderhub_source:
+        description: 'Build the BinderHub image from owner/repo@branch (e.g. RCOSDP/CS-binderhub@master)'
+        required: false
+        default: ''
+      binderhub_jupyterhub_source:
+        description: 'Install JupyterHub for the BinderHub tests from owner/repo@branch (e.g. RCOSDP/CS-jupyterhub@master)'
+        required: false
+        default: ''
       enable_wiki:
         description: 'Run the Wiki E2E notebooks in all matrix jobs'
         required: false
@@ -109,6 +125,10 @@ on:
           - 'true'
           - 'false'
 
+env:
+  BINDERHUB_DEFAULT_IMAGE: gcr.io/nii-ap-ops/k8s-binderhub-binderhub:0.2.5-20261111
+  BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE: gcr.io/nii-ap-ops/k8s-hub:4.1.0-20261106
+
 jobs:
   build-images:
     runs-on: ubuntu-latest
@@ -119,6 +139,8 @@ jobs:
       rdm_target_sha: ${{ steps.rdm_target.outputs.target_sha }}
       osf_image: ${{ steps.osf_image.outputs.tag }}
       osf_image_id: ${{ steps.osf_image.outputs.image_id }}
+      binderhub_custom: ${{ steps.binderhub_params.outputs.binderhub_source != '' }}
+      binderhub_jupyterhub_custom: ${{ steps.binderhub_params.outputs.jupyterhub_source != '' }}
     steps:
     - name: Checkout test repository
       uses: actions/checkout@v4
@@ -363,6 +385,49 @@ jobs:
         echo "tag=$image" >> "$GITHUB_OUTPUT"
         echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
 
+    - name: Parse BinderHub source parameters
+      id: binderhub_params
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
+          echo "binderhub_source=$(grep -oP '^-\s*BINDERHUB_SOURCE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+          echo "jupyterhub_source=$(grep -oP '^-\s*BINDERHUB_JUPYTERHUB_SOURCE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+        else
+          echo "binderhub_source=${{ github.event.inputs.binderhub_source }}" >> $GITHUB_OUTPUT
+          echo "jupyterhub_source=${{ github.event.inputs.binderhub_jupyterhub_source }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build custom BinderHub image
+      if: steps.binderhub_params.outputs.binderhub_source != ''
+      run: |
+        BINDERHUB_SOURCE="${{ steps.binderhub_params.outputs.binderhub_source }}"
+        BINDERHUB_REPO="${BINDERHUB_SOURCE%@*}"
+        BINDERHUB_BRANCH="${BINDERHUB_SOURCE#*@}"
+        echo "Building custom BinderHub image from ${BINDERHUB_REPO}@${BINDERHUB_BRANCH}"
+        git clone --depth=1 -b "$BINDERHUB_BRANCH" "https://github.com/${BINDERHUB_REPO}.git" CS-binderhub
+        cd CS-binderhub
+        # Same steps as the chartpress build of the deployed image
+        python3 -m pip install build
+        python3 -m build --wheel .
+        docker build -f helm-chart/images/binderhub/Dockerfile -t binderhub:custom .
+        cd ..
+        docker save -o prebuilt-images/binderhub-custom.tar binderhub:custom
+
+    - name: Build custom JupyterHub image for BinderHub tests
+      if: steps.binderhub_params.outputs.jupyterhub_source != ''
+      run: |
+        JUPYTERHUB_SOURCE="${{ steps.binderhub_params.outputs.jupyterhub_source }}"
+        JUPYTERHUB_REPO="${JUPYTERHUB_SOURCE%@*}"
+        JUPYTERHUB_BRANCH="${JUPYTERHUB_SOURCE#*@}"
+        echo "Building custom JupyterHub image from ${JUPYTERHUB_REPO}@${JUPYTERHUB_BRANCH}"
+        git clone --depth=1 -b "$JUPYTERHUB_BRANCH" "https://github.com/${JUPYTERHUB_REPO}.git" CS-jupyterhub
+        docker build -f e2e-tests/docker/binderhub/Dockerfile.jupyterhub-source \
+          --build-arg JUPYTERHUB_IMAGE="$BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE" \
+          -t binderhub-jupyterhub:custom CS-jupyterhub
+        docker save -o prebuilt-images/binderhub-jupyterhub-custom.tar binderhub-jupyterhub:custom
+
     - name: Upload prebuilt images
       uses: actions/upload-artifact@v4
       with:
@@ -473,6 +538,22 @@ jobs:
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: migration-s3-sigv4
+            display_name: "S3 SigV4 migration and rollback"
+            include_admin: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+            s3_migration: true
+            migration_from:
+              repository: RCOSDP/RDM-osf.io
+              commit: ddcc3505f8e9f4726236c280f2e1efd32cf352c3
+              osf_image: niicloudoperation/rdm-osf.io:latest
+              ember_image: niicloudoperation/rdm-ember-osf-web:latest
+              cas_image: niicloudoperation/rdm-cas-overlay:latest
+              mfr_image: niicloudoperation/rdm-modular-file-renderer:latest
+              wb_image: s3-migration-waterbutler:legacy
+              wb_commit: 004f407fefb071f1dc924d09f99916b1d5ea3561
           - name: migration-from-20250906-weko
             display_name: "Migration Test from 20250906 (WEKO)"
             include_admin: true
@@ -522,6 +603,56 @@ jobs:
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: user-s3-minio
+            display_name: "User Tests (Amazon S3 via MinIO)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            member_display_enabled: false
+          - name: user-s3-minio-regional
+            display_name: "User Tests (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            minio_region: ap-northeast-1
+            member_display_enabled: false
+          - name: admin-s3-minio
+            display_name: "Institutional Storage (Amazon S3 via MinIO)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+          - name: admin-s3-minio-regional
+            display_name: "Institutional Storage (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+            minio_region: ap-northeast-1
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -718,12 +849,29 @@ jobs:
             institutional_admin_authorization_enabled: true
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: user-binderhub-oauth
+            display_name: "User Tests (BinderHub OAuth)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            binderhub_enabled: true
+            flowable_enabled: false
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
+      S3_MINIO_ENABLED: ${{ matrix.test-group.s3_minio_enabled == true && 'true' || 'false' }}
+      S3_MINIO_INST_ENABLED: ${{ matrix.test-group.s3_minio_institutional == true && 'true' || 'false' }}
+      S3_MIGRATION_ENABLED: ${{ matrix.test-group.s3_migration == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
+      BINDERHUB_ENABLED: ${{ matrix.test-group.binderhub_enabled == true && 'true' || 'false' }}
       JUPYTERHUB_ENABLED: ${{ matrix.test-group.jupyterhub_enabled == true && 'true' || 'false' }}
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
       MIBYO_DB_ENABLED: ${{ matrix.test-group.mibyo_db_enabled == true && 'true' || 'false' }}
@@ -734,7 +882,7 @@ jobs:
       MINIO_ROOT_PASSWORD: e2epassword123
       MINIO_ALIAS: ci-minio
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_REGION: us-east-1
+      MINIO_REGION: ${{ matrix.test-group.minio_region || 'us-east-1' }}
       MINIO_SERVICE_NAME: MinIO (CI)
 
     steps:
@@ -842,6 +990,15 @@ jobs:
           docker load -i prebuilt-images/rdm-waterbutler-custom.tar
           echo "WB_IMAGE=rdm-waterbutler:custom" >> "$GITHUB_ENV"
         fi
+
+        if [ "${BINDERHUB_ENABLED}" = "true" ] && [ "${{ needs.build-images.outputs.binderhub_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/binderhub-custom.tar
+          echo "BINDERHUB_CUSTOM_IMAGE=binderhub:custom" >> "$GITHUB_ENV"
+        fi
+        if [ "${BINDERHUB_ENABLED}" = "true" ] && [ "${{ needs.build-images.outputs.binderhub_jupyterhub_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/binderhub-jupyterhub-custom.tar
+          echo "BINDERHUB_CUSTOM_JUPYTERHUB_IMAGE=binderhub-jupyterhub:custom" >> "$GITHUB_ENV"
+        fi
         rm -rf prebuilt-images
 
     - name: Install Docker Compose
@@ -887,6 +1044,12 @@ jobs:
         export CAS_IMAGE="${{ matrix.test-group.migration_from.cas_image }}"
         export MFR_IMAGE="${{ matrix.test-group.migration_from.mfr_image }}"
         export WB_IMAGE="${{ matrix.test-group.migration_from.wb_image }}"
+        if [ "${S3_MIGRATION_ENABLED}" = "true" ]; then
+          git init "$RUNNER_TEMP/waterbutler-legacy"
+          git -C "$RUNNER_TEMP/waterbutler-legacy" fetch --depth=1 https://github.com/RCOSDP/RDM-waterbutler.git "${{ matrix.test-group.migration_from.wb_commit }}"
+          git -C "$RUNNER_TEMP/waterbutler-legacy" checkout --detach FETCH_HEAD
+          docker build -t "$WB_IMAGE" "$RUNNER_TEMP/waterbutler-legacy"
+        fi
         create_docker_override
         
         # Install requirements
@@ -911,6 +1074,16 @@ jobs:
         # Test endpoints
         test_rdm_endpoints
 
+    - name: Initialize S3 storage for migration
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        scripts="${{ github.workspace }}/e2e-tests/.github/scripts"
+        "$scripts/setup_minio_buckets.sh" . "$MINIO_ALIAS" "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" \
+          s3migrationa s3-fixture-secret-a s3-e2e-a s3migrationb s3-fixture-secret-b s3-e2e-b
+        bash "$scripts/setup_s3_minio.sh" prepare "$PWD"
+        S3_MIGRATION_LEGACY=true bash "$scripts/setup_s3_minio.sh" install "$PWD"
+
     - name: Set up Python for E2E tests
       uses: actions/setup-python@v4
       with:
@@ -923,6 +1096,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
         pip install --no-cache-dir papermill
+        if [ "${S3_MINIO_ENABLED}" = "true" ] && [ "${S3_MINIO_INST_ENABLED}" != "true" ] && [ "${S3_MIGRATION_ENABLED}" != "true" ]; then
+          pip install --no-cache-dir boto3
+        fi
         
         # Clear pip cache if any remains
         pip cache purge || true
@@ -994,11 +1170,39 @@ jobs:
         
         echo "Migration-specific initial data notebook executed"
 
+    - name: Run S3 migration source notebook
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-before
+        papermill テスト手順-S3移行前.ipynb ../result/s3-before/テスト手順-S3移行前.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p s3_access_key s3migrationa -p s3_secret_key s3-fixture-secret-a -p s3_bucket s3-e2e-a \
+          -p default_result_path ../result/s3-before -p close_on_fail True
+
+    - name: Configure institutional S3 on the migration source
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        mkdir -p result/s3-before/institutional
+        papermill 取りまとめ-機関ストレージ.ipynb result/s3-before/institutional/取りまとめ-機関ストレージ.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p admin_rdm_url http://192.168.168.167:8001/ \
+          -p idp_name_1 FakeCAS -p idp_username_1 teststaff@example.com -p idp_password_1 testpass789 \
+          -p member_idp_username testuser2@example.com -p member_idp_password testpass456 \
+          -p storage_provider s3 -p institutional_storage_name 'Institutional S3 Migration Storage' \
+          -p s3_access_key s3migrationb -p s3_secret_key s3-fixture-secret-b -p s3_bucket s3-e2e-b \
+          -p rdm_project_prefix TEST-Institutional-S3-Migration -p prepare_migration True \
+          -p default_result_path result/s3-before/institutional -p close_on_fail True
+
     - name: Stop migration source environment
       if: matrix.test-group.migration_from != null
       working-directory: RDM-osf.io
       run: |
         echo "Stopping migration source environment..."
+        if [ "${S3_MIGRATION_ENABLED}" = "true" ]; then
+          docker-compose logs --no-color --no-log-prefix s3-minio-proxy > ../e2e-tests/result/s3-before/s3-minio-proxy.log
+        fi
         docker-compose down
         echo "Migration source environment stopped"
 
@@ -1025,6 +1229,11 @@ jobs:
         # Setup configuration files
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         setup_config_files
+
+    - name: Prepare OAuth BinderHub settings
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh prepare ../RDM-osf.io
 
     - name: Parse PR body and workflow parameters
       env:
@@ -1094,6 +1303,8 @@ jobs:
           TLJH_PLUGIN_OVERRIDE=$(grep -oP '^-\s*TLJH_PLUGIN:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
           TLJH_REPO2DOCKER_IMAGE_OVERRIDE=$(grep -oP '^-\s*TLJH_REPO2DOCKER_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
           TLJH_RDMFS_IMAGE_OVERRIDE=$(grep -oP '^-\s*TLJH_RDMFS_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          BINDERHUB_IMAGE_OVERRIDE=$(grep -oP '^-\s*BINDERHUB_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE=$(grep -oP '^-\s*BINDERHUB_JUPYTERHUB_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
 
           # Export for use in later steps
           echo "EXCLUDE_NOTEBOOKS=$EXCLUDE_NOTEBOOKS_OVERRIDE" >> $GITHUB_ENV
@@ -1101,6 +1312,8 @@ jobs:
           echo "TLJH_PLUGIN_OVERRIDE=$TLJH_PLUGIN_OVERRIDE" >> $GITHUB_ENV
           echo "TLJH_REPO2DOCKER_IMAGE_OVERRIDE=$TLJH_REPO2DOCKER_IMAGE_OVERRIDE" >> $GITHUB_ENV
           echo "TLJH_RDMFS_IMAGE_OVERRIDE=$TLJH_RDMFS_IMAGE_OVERRIDE" >> $GITHUB_ENV
+          echo "BINDERHUB_IMAGE_OVERRIDE=$BINDERHUB_IMAGE_OVERRIDE" >> $GITHUB_ENV
+          echo "BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE=$BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE" >> $GITHUB_ENV
 
           export EMBER_IMAGE="${EMBER_OVERRIDE:-niicloudoperation/rdm-ember-osf-web:latest}"
           export CAS_IMAGE="${CAS_OVERRIDE:-niicloudoperation/rdm-cas-overlay:latest}"
@@ -1123,6 +1336,9 @@ jobs:
 
         source ${{ github.workspace }}/e2e-tests/.github/scripts/setup_rdm.sh
         create_docker_override
+        if [ "${S3_MINIO_ENABLED}" = "true" ] && [ "${S3_MIGRATION_ENABLED}" != "true" ]; then
+          bash "${{ github.workspace }}/e2e-tests/.github/scripts/setup_s3_minio.sh" prepare "${PWD}"
+        fi
 
     - name: Install RDM requirements
       working-directory: RDM-osf.io
@@ -1180,7 +1396,7 @@ jobs:
         rm "$JSON_FILE"
 
     - name: Initialize MinIO for S3 compatibility tests
-      if: env.MINIO_ENABLED == 'true'
+      if: env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         set -eu
@@ -1199,6 +1415,9 @@ jobs:
         SECRET_KEY_2="$(secret_part)"
 
         BUCKET_PREFIX="ci-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-0}"
+        if [ "${S3_MINIO_ENABLED}" = "true" ]; then
+          BUCKET_PREFIX="s3-e2e"
+        fi
         BUCKET_NAME_1="${BUCKET_PREFIX}-a"
         BUCKET_NAME_2="${BUCKET_PREFIX}-b"
 
@@ -1222,6 +1441,11 @@ jobs:
         echo "S3COMPAT_REGION=${MINIO_REGION}" >> $GITHUB_ENV
         echo "S3COMPAT_ENDPOINT=${MINIO_ENDPOINT}" >> $GITHUB_ENV
         echo "S3COMPAT_SERVICE_NAME=${MINIO_SERVICE_NAME}" >> $GITHUB_ENV
+
+    - name: Route Amazon S3 requests to MinIO
+      if: env.S3_MINIO_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: bash "${{ github.workspace }}/e2e-tests/.github/scripts/setup_s3_minio.sh" install "${PWD}"
 
     - name: Initialize MinIO for S3CompatSigV4 tests
       if: env.MINIO_ENABLED == 'true' && (env.S3COMPATSIGV4_ENABLED == 'true' || env.S3COMPATSIGV4_INST_ENABLED == 'true')
@@ -1290,7 +1514,7 @@ jobs:
         fi
 
     - name: Start MinIO trace
-      if: env.MINIO_ENABLED == 'true'
+      if: env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1353,6 +1577,14 @@ jobs:
         echo "GATEWAY_BASE_URL=http://192.168.168.167:8088/" >> $GITHUB_ENV
         echo "WORKFLOW_BATCH_PROJECT_COUNT=${{ matrix.test-group.workflow_batch_project_count || 50 }}" >> $GITHUB_ENV
         echo "WORKFLOW_TEST_MODE=${{ matrix.test-group.workflow_test_mode }}" >> $GITHUB_ENV
+
+    - name: Install OAuth BinderHub stack
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      env:
+        BINDERHUB_IMAGE: ${{ env.BINDERHUB_CUSTOM_IMAGE || env.BINDERHUB_IMAGE_OVERRIDE || github.event.inputs.binderhub_image || env.BINDERHUB_DEFAULT_IMAGE }}
+        JUPYTERHUB_IMAGE: ${{ env.BINDERHUB_CUSTOM_JUPYTERHUB_IMAGE || env.BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE || github.event.inputs.binderhub_jupyterhub_image || env.BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE }}
+      run: .github/scripts/setup_binderhub.sh install
 
     - name: Install TLJH stack
       if: env.JUPYTERHUB_ENABLED == 'true'
@@ -1467,7 +1699,95 @@ jobs:
         docker-compose exec -T web python3 -m scripts.register_erad_metadata /tmp/erad_sample.csv
         echo "e-Rad data registered successfully"
 
+    - name: Verify S3 data after upgrading
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-after
+        papermill テスト手順-S3移行後.ipynb ../result/s3-after/テスト手順-S3移行後.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after -p close_on_fail True
+
+    - name: Verify institutional S3 data after upgrading
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-after/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-after/institutional/テスト手順-S3移行後.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' -p target_file_name test_institutional_storage.txt \
+          -p target_file_content 'S3 institutional storage migration fixture' \
+          -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after/institutional -p close_on_fail True
+
+    - name: Verify upgraded S3 requests use SigV4
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        log=../e2e-tests/result/s3-after/s3-minio-proxy.log
+        docker-compose logs --no-color --no-log-prefix s3-minio-proxy > "$log"
+        for bucket in s3-e2e-a s3-e2e-b; do
+          if ! grep -Eq "^[^ ]+ (${bucket}\.[^ ]+ |[^ ]+ /${bucket}(/| ))[^[:cntrl:]]*signature=v4$" "$log"; then
+            echo "No Signature V4 request recorded for ${bucket}" >&2
+            exit 1
+          fi
+        done
+        if grep -q 'signature=v2$' "$log"; then
+          echo 'The upgraded version used Signature V2' >&2
+          exit 1
+        fi
+
+    - name: Restore the migration source version
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        docker-compose down
+        git checkout -f "${{ matrix.test-group.migration_from.commit }}"
+        export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
+        export OSF_IMAGE="${{ matrix.test-group.migration_from.osf_image }}"
+        export EMBER_IMAGE="${{ matrix.test-group.migration_from.ember_image }}"
+        export CAS_IMAGE="${{ matrix.test-group.migration_from.cas_image }}"
+        export MFR_IMAGE="${{ matrix.test-group.migration_from.mfr_image }}"
+        export WB_IMAGE="${{ matrix.test-group.migration_from.wb_image }}"
+        scripts="${{ github.workspace }}/e2e-tests/.github/scripts"
+        source "$scripts/setup_rdm.sh"
+        setup_config_files
+        create_docker_override
+        install_requirements
+        compile_translations
+        start_asset_services
+        start_rdm_services
+        S3_MIGRATION_LEGACY=true bash "$scripts/setup_s3_minio.sh" install "$PWD"
+        test_rdm_endpoints
+
+    - name: Verify S3 data after rolling back
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-rollback
+        papermill テスト手順-S3移行後.ipynb ../result/s3-rollback/テスト手順-S3ロールバック.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
+          -p default_result_path ../result/s3-rollback -p close_on_fail True
+
+    - name: Verify institutional S3 data after rolling back
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-rollback/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-rollback/institutional/テスト手順-S3ロールバック.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' \
+          -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
+          -p default_result_path ../result/s3-rollback/institutional -p close_on_fail True
+
     - name: Prepare test configuration
+      if: env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         cat > base_ci.config.yaml <<'EOF'
@@ -1569,7 +1889,10 @@ jobs:
         fi
 
         args=(ci.config.yaml base_ci.config.yaml)
-        if [ "${MINIO_ENABLED}" = "true" ]; then
+        if [ "${S3_MINIO_ENABLED}" = "true" ]; then
+          export S3_MINIO_CA_BUNDLE="${GITHUB_WORKSPACE}/RDM-osf.io/.s3-minio/server.crt"
+          args+=(--s3-minio)
+        elif [ "${MINIO_ENABLED}" = "true" ]; then
           args+=(--minio)
         fi
         if [ "${JUPYTERHUB_ENABLED}" = "true" ]; then
@@ -1591,6 +1914,9 @@ jobs:
           args+=(--wiki)
         fi
 
+        if [ "${BINDERHUB_ENABLED}" = "true" ]; then
+          args+=(--binderhub)
+        fi
         .github/scripts/generate_ci_config.sh "${args[@]}"
         rm base_ci.config.yaml
 
@@ -1624,6 +1950,7 @@ jobs:
         cat ci.config.yaml
 
     - name: Run E2E tests
+      if: env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         # Create result directories
@@ -1697,8 +2024,35 @@ jobs:
         path: e2e-tests/result/
         retention-days: 7
 
+    - name: Collect Amazon S3 proxy log
+      if: always() && env.S3_MINIO_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: docker-compose logs --no-color --no-log-prefix s3-minio-proxy > ../e2e-tests/s3-minio-proxy.log
+
+    - name: Verify Amazon S3 requests use SigV4
+      if: always() && env.S3_MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
+      run: |
+        python3 - <<'PYTHON'
+        from pathlib import Path
+        lines = Path('e2e-tests/s3-minio-proxy.log').read_text().splitlines()
+        assert any(line.endswith('signature=v4') for line in lines), 'No SigV4 requests reached MinIO'
+        assert not any(line.endswith('signature=v2') for line in lines), 'S3 requests used Signature V2'
+        PYTHON
+
+    - name: Verify multipart upload completion uses SigV4
+      if: always() && env.S3_MINIO_ENABLED == 'true' && env.S3_MINIO_INST_ENABLED != 'true' && env.S3_MIGRATION_ENABLED != 'true'
+      run: |
+        grep -E '^POST .+/multipart-check\.bin 200 operation=complete-multipart signature=v4$' e2e-tests/s3-minio-proxy.log
+
+    - name: Upload Amazon S3 proxy log
+      if: always() && env.S3_MINIO_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: s3-minio-proxy-${{ matrix.test-group.name }}
+        path: e2e-tests/s3-minio-proxy.log
+
     - name: Collect MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1708,7 +2062,7 @@ jobs:
         fi
 
     - name: Upload MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: minio-trace-${{ matrix.test-group.name }}
@@ -1727,6 +2081,24 @@ jobs:
       with:
         name: weko-logs-${{ matrix.test-group.name }}
         path: e2e-tests/weko-docker-logs.txt
+        retention-days: 7
+
+    - name: Collect OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        docker compose -f docker/binderhub/compose.yaml logs --no-color > binderhub-logs.txt 2>&1
+        for container in $(docker ps -a --filter name=rdm-e2e-binder- --format '{{.Names}}'); do
+          echo "Container: $container" >> binderhub-logs.txt
+          docker logs "$container" >> binderhub-logs.txt 2>&1
+        done
+
+    - name: Upload OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binderhub-logs-${{ matrix.test-group.name }}
+        path: e2e-tests/binderhub-logs.txt
         retention-days: 7
 
     - name: Collect TLJH logs
@@ -1775,6 +2147,11 @@ jobs:
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_weko.sh down ../weko
+
+    - name: Stop OAuth BinderHub stack
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh down
 
     - name: Stop TLJH stack
       if: always() && env.JUPYTERHUB_ENABLED == 'true'
