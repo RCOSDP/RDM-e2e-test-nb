@@ -278,6 +278,22 @@ jobs:
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: migration-s3-sigv4
+            display_name: "S3 SigV4 migration and rollback"
+            include_admin: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+            s3_migration: true
+            migration_from:
+              repository: RCOSDP/RDM-osf.io
+              commit: ddcc3505f8e9f4726236c280f2e1efd32cf352c3
+              osf_image: niicloudoperation/rdm-osf.io:latest
+              ember_image: niicloudoperation/rdm-ember-osf-web:latest
+              cas_image: niicloudoperation/rdm-cas-overlay:latest
+              mfr_image: niicloudoperation/rdm-modular-file-renderer:latest
+              wb_image: s3-migration-waterbutler:legacy
+              wb_commit: 004f407fefb071f1dc924d09f99916b1d5ea3561
           - name: migration-from-20250906-weko
             display_name: "Migration Test from 20250906 (WEKO)"
             include_admin: true
@@ -327,6 +343,56 @@ jobs:
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: user-s3-minio
+            display_name: "User Tests (Amazon S3 via MinIO)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            member_display_enabled: false
+          - name: user-s3-minio-regional
+            display_name: "User Tests (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            minio_region: ap-northeast-1
+            member_display_enabled: false
+          - name: admin-s3-minio
+            display_name: "Institutional Storage (Amazon S3 via MinIO)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+          - name: admin-s3-minio-regional
+            display_name: "Institutional Storage (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+            minio_region: ap-northeast-1
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -526,6 +592,9 @@ jobs:
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
+      S3_MINIO_ENABLED: ${{ matrix.test-group.s3_minio_enabled == true && 'true' || 'false' }}
+      S3_MINIO_INST_ENABLED: ${{ matrix.test-group.s3_minio_institutional == true && 'true' || 'false' }}
+      S3_MIGRATION_ENABLED: ${{ matrix.test-group.s3_migration == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
@@ -539,7 +608,7 @@ jobs:
       MINIO_ROOT_PASSWORD: e2epassword123
       MINIO_ALIAS: ci-minio
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_REGION: us-east-1
+      MINIO_REGION: ${{ matrix.test-group.minio_region || 'us-east-1' }}
       MINIO_SERVICE_NAME: MinIO (CI)
 
     steps:
@@ -804,6 +873,12 @@ jobs:
         export CAS_IMAGE="${{ matrix.test-group.migration_from.cas_image }}"
         export MFR_IMAGE="${{ matrix.test-group.migration_from.mfr_image }}"
         export WB_IMAGE="${{ matrix.test-group.migration_from.wb_image }}"
+        if [ "${S3_MIGRATION_ENABLED}" = "true" ]; then
+          git init "$RUNNER_TEMP/waterbutler-legacy"
+          git -C "$RUNNER_TEMP/waterbutler-legacy" fetch --depth=1 https://github.com/RCOSDP/RDM-waterbutler.git "${{ matrix.test-group.migration_from.wb_commit }}"
+          git -C "$RUNNER_TEMP/waterbutler-legacy" checkout --detach FETCH_HEAD
+          docker build -t "$WB_IMAGE" "$RUNNER_TEMP/waterbutler-legacy"
+        fi
         create_docker_override
         
         # Install requirements
@@ -828,6 +903,16 @@ jobs:
         # Test endpoints
         test_rdm_endpoints
 
+    - name: Initialize S3 storage for migration
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        scripts="${{ github.workspace }}/e2e-tests/.github/scripts"
+        "$scripts/setup_minio_buckets.sh" . "$MINIO_ALIAS" "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" \
+          s3migrationa s3-fixture-secret-a s3-e2e-a s3migrationb s3-fixture-secret-b s3-e2e-b
+        bash "$scripts/setup_s3_minio.sh" prepare "$PWD"
+        S3_MIGRATION_LEGACY=true bash "$scripts/setup_s3_minio.sh" install "$PWD"
+
     - name: Set up Python for E2E tests
       uses: actions/setup-python@v4
       with:
@@ -840,6 +925,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
         pip install --no-cache-dir papermill
+        if [ "${S3_MINIO_ENABLED}" = "true" ] && [ "${S3_MINIO_INST_ENABLED}" != "true" ] && [ "${S3_MIGRATION_ENABLED}" != "true" ]; then
+          pip install --no-cache-dir boto3
+        fi
         
         # Clear pip cache if any remains
         pip cache purge || true
@@ -911,11 +999,39 @@ jobs:
         
         echo "Migration-specific initial data notebook executed"
 
+    - name: Run S3 migration source notebook
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-before
+        papermill テスト手順-S3移行前.ipynb ../result/s3-before/テスト手順-S3移行前.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p s3_access_key s3migrationa -p s3_secret_key s3-fixture-secret-a -p s3_bucket s3-e2e-a \
+          -p default_result_path ../result/s3-before -p close_on_fail True
+
+    - name: Configure institutional S3 on the migration source
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        mkdir -p result/s3-before/institutional
+        papermill 取りまとめ-機関ストレージ.ipynb result/s3-before/institutional/取りまとめ-機関ストレージ.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p admin_rdm_url http://192.168.168.167:8001/ \
+          -p idp_name_1 FakeCAS -p idp_username_1 teststaff@example.com -p idp_password_1 testpass789 \
+          -p member_idp_username testuser2@example.com -p member_idp_password testpass456 \
+          -p storage_provider s3 -p institutional_storage_name 'Institutional S3 Migration Storage' \
+          -p s3_access_key s3migrationb -p s3_secret_key s3-fixture-secret-b -p s3_bucket s3-e2e-b \
+          -p rdm_project_prefix TEST-Institutional-S3-Migration -p prepare_migration True \
+          -p default_result_path result/s3-before/institutional -p close_on_fail True
+
     - name: Stop migration source environment
       if: matrix.test-group.migration_from != null
       working-directory: RDM-osf.io
       run: |
         echo "Stopping migration source environment..."
+        if [ "${S3_MIGRATION_ENABLED}" = "true" ]; then
+          docker-compose logs --no-color --no-log-prefix s3-minio-proxy > ../e2e-tests/result/s3-before/s3-minio-proxy.log
+        fi
         docker-compose down
         echo "Migration source environment stopped"
 
@@ -1115,6 +1231,9 @@ jobs:
 
         source ${{ github.workspace }}/e2e-tests/.github/scripts/setup_rdm.sh
         create_docker_override
+        if [ "${S3_MINIO_ENABLED}" = "true" ] && [ "${S3_MIGRATION_ENABLED}" != "true" ]; then
+          bash "${{ github.workspace }}/e2e-tests/.github/scripts/setup_s3_minio.sh" prepare "${PWD}"
+        fi
 
     - name: Install RDM requirements
       working-directory: RDM-osf.io
@@ -1172,7 +1291,7 @@ jobs:
         rm "$JSON_FILE"
 
     - name: Initialize MinIO for S3 compatibility tests
-      if: env.MINIO_ENABLED == 'true'
+      if: env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         set -eu
@@ -1191,6 +1310,9 @@ jobs:
         SECRET_KEY_2="$(secret_part)"
 
         BUCKET_PREFIX="ci-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-0}"
+        if [ "${S3_MINIO_ENABLED}" = "true" ]; then
+          BUCKET_PREFIX="s3-e2e"
+        fi
         BUCKET_NAME_1="${BUCKET_PREFIX}-a"
         BUCKET_NAME_2="${BUCKET_PREFIX}-b"
 
@@ -1214,6 +1336,11 @@ jobs:
         echo "S3COMPAT_REGION=${MINIO_REGION}" >> $GITHUB_ENV
         echo "S3COMPAT_ENDPOINT=${MINIO_ENDPOINT}" >> $GITHUB_ENV
         echo "S3COMPAT_SERVICE_NAME=${MINIO_SERVICE_NAME}" >> $GITHUB_ENV
+
+    - name: Route Amazon S3 requests to MinIO
+      if: env.S3_MINIO_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: bash "${{ github.workspace }}/e2e-tests/.github/scripts/setup_s3_minio.sh" install "${PWD}"
 
     - name: Initialize MinIO for S3CompatSigV4 tests
       if: env.MINIO_ENABLED == 'true' && (env.S3COMPATSIGV4_ENABLED == 'true' || env.S3COMPATSIGV4_INST_ENABLED == 'true')
@@ -1282,7 +1409,7 @@ jobs:
         fi
 
     - name: Start MinIO trace
-      if: env.MINIO_ENABLED == 'true'
+      if: env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1459,7 +1586,95 @@ jobs:
         docker-compose exec -T web python3 -m scripts.register_erad_metadata /tmp/erad_sample.csv
         echo "e-Rad data registered successfully"
 
+    - name: Verify S3 data after upgrading
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-after
+        papermill テスト手順-S3移行後.ipynb ../result/s3-after/テスト手順-S3移行後.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after -p close_on_fail True
+
+    - name: Verify institutional S3 data after upgrading
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-after/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-after/institutional/テスト手順-S3移行後.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' -p target_file_name test_institutional_storage.txt \
+          -p target_file_content 'S3 institutional storage migration fixture' \
+          -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after/institutional -p close_on_fail True
+
+    - name: Verify upgraded S3 requests use SigV4
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        log=../e2e-tests/result/s3-after/s3-minio-proxy.log
+        docker-compose logs --no-color --no-log-prefix s3-minio-proxy > "$log"
+        for bucket in s3-e2e-a s3-e2e-b; do
+          if ! grep -Eq "^[^ ]+ (${bucket}\.[^ ]+ |[^ ]+ /${bucket}(/| ))[^[:cntrl:]]*signature=v4$" "$log"; then
+            echo "No Signature V4 request recorded for ${bucket}" >&2
+            exit 1
+          fi
+        done
+        if grep -q 'signature=v2$' "$log"; then
+          echo 'The upgraded version used Signature V2' >&2
+          exit 1
+        fi
+
+    - name: Restore the migration source version
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        docker-compose down
+        git checkout -f "${{ matrix.test-group.migration_from.commit }}"
+        export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
+        export OSF_IMAGE="${{ matrix.test-group.migration_from.osf_image }}"
+        export EMBER_IMAGE="${{ matrix.test-group.migration_from.ember_image }}"
+        export CAS_IMAGE="${{ matrix.test-group.migration_from.cas_image }}"
+        export MFR_IMAGE="${{ matrix.test-group.migration_from.mfr_image }}"
+        export WB_IMAGE="${{ matrix.test-group.migration_from.wb_image }}"
+        scripts="${{ github.workspace }}/e2e-tests/.github/scripts"
+        source "$scripts/setup_rdm.sh"
+        setup_config_files
+        create_docker_override
+        install_requirements
+        compile_translations
+        start_asset_services
+        start_rdm_services
+        S3_MIGRATION_LEGACY=true bash "$scripts/setup_s3_minio.sh" install "$PWD"
+        test_rdm_endpoints
+
+    - name: Verify S3 data after rolling back
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-rollback
+        papermill テスト手順-S3移行後.ipynb ../result/s3-rollback/テスト手順-S3ロールバック.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
+          -p default_result_path ../result/s3-rollback -p close_on_fail True
+
+    - name: Verify institutional S3 data after rolling back
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-rollback/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-rollback/institutional/テスト手順-S3ロールバック.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' \
+          -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
+          -p default_result_path ../result/s3-rollback/institutional -p close_on_fail True
+
     - name: Prepare test configuration
+      if: env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         cat > base_ci.config.yaml <<'EOF'
@@ -1560,7 +1775,10 @@ jobs:
         fi
 
         args=(ci.config.yaml base_ci.config.yaml)
-        if [ "${MINIO_ENABLED}" = "true" ]; then
+        if [ "${S3_MINIO_ENABLED}" = "true" ]; then
+          export S3_MINIO_CA_BUNDLE="${GITHUB_WORKSPACE}/RDM-osf.io/.s3-minio/server.crt"
+          args+=(--s3-minio)
+        elif [ "${MINIO_ENABLED}" = "true" ]; then
           args+=(--minio)
         fi
         if [ "${JUPYTERHUB_ENABLED}" = "true" ]; then
@@ -1615,6 +1833,7 @@ jobs:
         cat ci.config.yaml
 
     - name: Run E2E tests
+      if: env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         # Create result directories
@@ -1688,8 +1907,35 @@ jobs:
         path: e2e-tests/result/
         retention-days: 7
 
+    - name: Collect Amazon S3 proxy log
+      if: always() && env.S3_MINIO_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: docker-compose logs --no-color --no-log-prefix s3-minio-proxy > ../e2e-tests/s3-minio-proxy.log
+
+    - name: Verify Amazon S3 requests use SigV4
+      if: always() && env.S3_MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
+      run: |
+        python3 - <<'PYTHON'
+        from pathlib import Path
+        lines = Path('e2e-tests/s3-minio-proxy.log').read_text().splitlines()
+        assert any(line.endswith('signature=v4') for line in lines), 'No SigV4 requests reached MinIO'
+        assert not any(line.endswith('signature=v2') for line in lines), 'S3 requests used Signature V2'
+        PYTHON
+
+    - name: Verify multipart upload completion uses SigV4
+      if: always() && env.S3_MINIO_ENABLED == 'true' && env.S3_MINIO_INST_ENABLED != 'true' && env.S3_MIGRATION_ENABLED != 'true'
+      run: |
+        grep -E '^POST .+/multipart-check\.bin 200 operation=complete-multipart signature=v4$' e2e-tests/s3-minio-proxy.log
+
+    - name: Upload Amazon S3 proxy log
+      if: always() && env.S3_MINIO_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: s3-minio-proxy-${{ matrix.test-group.name }}
+        path: e2e-tests/s3-minio-proxy.log
+
     - name: Collect MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1699,7 +1945,7 @@ jobs:
         fi
 
     - name: Upload MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: minio-trace-${{ matrix.test-group.name }}
