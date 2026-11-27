@@ -1,0 +1,12 @@
+services:
+  web:
+    build: .
+    environment:
+      WEKO_ADMIN_EMAIL: wekosoftware@nii.ac.jp
+      WEKO_ADMIN_PASSWORD: ${WEKO_ADMIN_PASSWORD}
+      WEKO_USER_EMAIL: contributor@example.org
+      WEKO_USER_PASSWORD: ${WEKO_USER_PASSWORD}
+    volumes:
+      - ./nginx/keys:/certs:ro
+    ports:
+      - "443:443"
