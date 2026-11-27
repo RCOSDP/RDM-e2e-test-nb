@@ -539,16 +539,6 @@ async def select_wiki_view_version(page, value, transition_timeout=60000, settle
     await page.wait_for_timeout(settle_ms)
 
 
-async def expect_wiki_editor_not_empty(page, required_text=None, transition_timeout=60000):
-    """編集エリアが表示され、空でないこと（必要なら目印テキスト含むこと）を確認する。"""
-    editor = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
-    await expect(editor).to_be_visible(timeout=transition_timeout)
-    content = (await editor.inner_text()).strip()
-    assert content, '版切替後に編集エリアが空になった'
-    if required_text is not None:
-        await expect(editor).to_contain_text(required_text, timeout=transition_timeout)
-
-
 async def open_wiki(page, wikiname, text, transition_timeout=60000):
     await page.locator(f'//*[contains(@class, "title-text")]//a[text()="{wikiname}"]').click()
     await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
