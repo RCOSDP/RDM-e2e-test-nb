@@ -1,0 +1,1110 @@
+[
+ {
+  "key": "pubdate",
+  "title": "PubDate",
+  "path": "datePublished",
+  "many": false,
+  "children": []
+ },
+ {
+  "key": "item_1617186331708",
+  "title": "データセットの名称",
+  "path": "rdm:name",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_title",
+    "title": "タイトル",
+    "path": "rdm:name.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_title_language",
+    "title": "言語",
+    "path": "rdm:name.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1736145554459",
+  "title": "メタデータ登録日",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_date_issued_type",
+    "title": "日付タイプ",
+    "path": "$Created",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_date_issued_datetime",
+    "title": "日付",
+    "path": "dateCreated",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1736145631851",
+  "title": "メタデータ更新日",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_date_issued_type",
+    "title": "日付タイプ",
+    "path": "$Updated",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_date_issued_datetime",
+    "title": "日付",
+    "path": "dateModified",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1736145715971",
+  "title": "キーワード",
+  "path": "keywords",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_subject",
+    "title": "主題",
+    "path": "keywords.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_subject_language",
+    "title": "言語",
+    "path": "keywords.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1736146491252",
+  "title": "ライセンス",
+  "path": "license",
+  "many": false,
+  "children": [
+   {
+    "key": "interim",
+    "title": "ライセンス",
+    "path": "license.name",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1736146823660",
+  "title": "アクセス権",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_access_right",
+    "title": "アクセス権",
+    "path": "rdm:accessRightsInformation",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1736146869604",
+  "title": "（アクセス権が「公開」でない場合）公開予定日",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_date_issued_type",
+    "title": "日付タイプ",
+    "path": "$Available",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_date_issued_datetime",
+    "title": "日付",
+    "path": "rdm:dateAvailable",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1736146927028",
+  "title": "データ作成者",
+  "path": "creator",
+  "many": true,
+  "children": [
+   {
+    "key": "givenNames",
+    "title": "作成者名",
+    "path": "creator.givenName",
+    "many": true,
+    "children": [
+     {
+      "key": "givenName",
+      "title": "名",
+      "path": "creator.givenName.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "givenNameLang",
+      "title": "言語",
+      "path": "creator.givenName.language",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "familyNames",
+    "title": "作成者姓",
+    "path": "creator.familyName",
+    "many": true,
+    "children": [
+     {
+      "key": "familyName",
+      "title": "姓",
+      "path": "creator.familyName.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "familyNameLang",
+      "title": "言語",
+      "path": "creator.familyName.language",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "creatorNames",
+    "title": "作成者姓名",
+    "path": "creator.name",
+    "many": true,
+    "children": [
+     {
+      "key": "creatorName",
+      "title": "姓名",
+      "path": "creator.name.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "creatorNameLang",
+      "title": "言語",
+      "path": "creator.name.language",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "nameIdentifiers",
+    "title": "作成者識別子",
+    "path": "creator.identifier",
+    "many": true,
+    "children": [
+     {
+      "key": "nameIdentifier",
+      "title": "作成者識別子",
+      "path": "creator.identifier.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "nameIdentifierScheme",
+      "title": "作成者識別子Scheme",
+      "path": "creator.identifier.jpcoar:nameIdentifierScheme",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "creatorAffiliations",
+    "title": "作成者所属",
+    "path": "creator.affiliation",
+    "many": true,
+    "children": [
+     {
+      "key": "affiliationNames",
+      "title": "所属機関名",
+      "path": "creator.affiliation.name",
+      "many": true,
+      "children": [
+       {
+        "key": "affiliationName",
+        "title": "所属機関名",
+        "path": "creator.affiliation.name.value",
+        "many": false,
+        "children": []
+       },
+       {
+        "key": "affiliationNameLang",
+        "title": "言語",
+        "path": "creator.affiliation.name.language",
+        "many": false,
+        "children": []
+       }
+      ]
+     },
+     {
+      "key": "affiliationNameIdentifiers",
+      "title": "所属機関識別子",
+      "path": null,
+      "many": true,
+      "children": [
+       {
+        "key": "affiliationNameIdentifier",
+        "title": "所属機関識別子",
+        "path": "creator.affiliation.identifier.value",
+        "many": false,
+        "children": []
+       },
+       {
+        "key": "affiliationNameIdentifierURI",
+        "title": "所属機関識別子URI",
+        "path": "creator.affiliation.identifier.uri",
+        "many": false,
+        "children": []
+       },
+       {
+        "key": "affiliationNameIdentifierScheme",
+        "title": "所属機関識別子Scheme",
+        "path": "creator.affiliation.identifier.jpcoar:nameIdentifierScheme",
+        "many": false,
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "creatorAlternatives",
+    "title": "作成者別名",
+    "path": "creator.alternateName",
+    "many": true,
+    "children": [
+     {
+      "key": "creatorAlternative",
+      "title": "別名",
+      "path": "creator.alternateName.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "creatorAlternativeLang",
+      "title": "言語",
+      "path": "creator.alternateName.language",
+      "many": false,
+      "children": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "key": "item_1736147063236",
+  "title": "データ管理者",
+  "path": "contributor",
+  "many": true,
+  "children": [
+   {
+    "key": "givenNames",
+    "title": "寄与者名",
+    "path": "contributor.givenName",
+    "many": true,
+    "children": [
+     {
+      "key": "givenName",
+      "title": "名",
+      "path": "contributor.givenName.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "givenNameLang",
+      "title": "言語",
+      "path": "contributor.givenName.language",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "familyNames",
+    "title": "寄与者姓",
+    "path": "contributor.familyName",
+    "many": true,
+    "children": [
+     {
+      "key": "familyName",
+      "title": "姓",
+      "path": "contributor.familyName.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "familyNameLang",
+      "title": "言語",
+      "path": "contributor.familyName.language",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "nameIdentifiers",
+    "title": "寄与者識別子",
+    "path": "contributor.identifier",
+    "many": true,
+    "children": [
+     {
+      "key": "nameIdentifier",
+      "title": "寄与者識別子",
+      "path": "contributor.identifier.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "nameIdentifierURI",
+      "title": "寄与者識別子URI",
+      "path": "contributor.identifier.uri",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "nameIdentifierScheme",
+      "title": "寄与者識別子Scheme",
+      "path": "contributor.identifier.jpcoar:nameIdentifierScheme",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "contributorNames",
+    "title": "寄与者姓名",
+    "path": "contributor.name",
+    "many": true,
+    "children": [
+     {
+      "key": "lang",
+      "title": "言語",
+      "path": "contributor.name.language",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "contributorName",
+      "title": "姓名",
+      "path": "contributor.name.value",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "contributorAffiliations",
+    "title": "寄与者所属",
+    "path": "contributor.affiliation",
+    "many": true,
+    "children": [
+     {
+      "key": "contributorAffiliationNames",
+      "title": "所属機関名",
+      "path": "contributor.affiliation.name",
+      "many": true,
+      "children": [
+       {
+        "key": "contributorAffiliationName",
+        "title": "所属機関名",
+        "path": "contributor.affiliation.name.value",
+        "many": false,
+        "children": []
+       },
+       {
+        "key": "contributorAffiliationNameLang",
+        "title": "言語",
+        "path": "contributor.affiliation.name.language",
+        "many": false,
+        "children": []
+       }
+      ]
+     },
+     {
+      "key": "contributorAffiliationNameIdentifiers",
+      "title": "所属機関識別子",
+      "path": "contributor.affiliation.identifier",
+      "many": true,
+      "children": [
+       {
+        "key": "contributorAffiliationURI",
+        "title": "所属機関識別子URI",
+        "path": "contributor.affiliation.identifier.uri",
+        "many": false,
+        "children": []
+       },
+       {
+        "key": "contributorAffiliationScheme",
+        "title": "所属機関識別子Scheme",
+        "path": "contributor.affiliation.identifier.jpcoar:nameIdentifierScheme",
+        "many": false,
+        "children": []
+       },
+       {
+        "key": "contributorAffiliationNameIdentifier",
+        "title": "所属機関識別子",
+        "path": "contributor.affiliation.identifier.value",
+        "many": false,
+        "children": []
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "contributorAlternatives",
+    "title": "寄与者別名",
+    "path": "contributor.alternateName",
+    "many": true,
+    "children": [
+     {
+      "key": "contributorAlternative",
+      "title": "別名",
+      "path": "contributor.alternateName.value",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "contributorAlternativeLang",
+      "title": "言語",
+      "path": "contributor.alternateName.language",
+      "many": false,
+      "children": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "key": "item_1736148125517",
+  "title": "ファイル情報",
+  "path": "hasPart",
+  "many": true,
+  "children": [
+   {
+    "key": "url",
+    "title": "本文URL",
+    "path": "hasPart.identifier",
+    "many": false,
+    "children": [
+     {
+      "key": "label",
+      "title": "ラベル",
+      "path": "hasPart.@id",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "objectType",
+      "title": "オブジェクトタイプ",
+      "path": "hasPart.identifier.jpcoar:objectType",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "date",
+    "title": "公開日",
+    "path": null,
+    "many": true,
+    "children": [
+     {
+      "key": "dateValue",
+      "title": "公開日",
+      "path": "hasPart.datePublished",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "format",
+    "title": "フォーマット",
+    "path": "hasPart.encodingFormat",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "version",
+    "title": "バージョン情報",
+    "path": "hasPart.version",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "fileDate",
+    "title": "日付",
+    "path": "hasPart.datetime",
+    "many": true,
+    "children": [
+     {
+      "key": "fileDateType",
+      "title": "日付タイプ",
+      "path": "hasPart.datetime.type",
+      "many": false,
+      "children": []
+     },
+     {
+      "key": "fileDateValue",
+      "title": "日付",
+      "path": "hasPart.datetime.date",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "filename",
+    "title": "ファイル名",
+    "path": "hasPart.name",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "filesize",
+    "title": "サイズ",
+    "path": null,
+    "many": true,
+    "children": [
+     {
+      "key": "value",
+      "title": "サイズ",
+      "path": "hasPart.contentSize",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "accessrole",
+    "title": "アクセス",
+    "path": "hasPart.accessRights",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739173036322",
+  "title": "プロジェクト名",
+  "path": null,
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_funding_stream_identifiers",
+    "title": "プログラム情報識別子",
+    "path": null,
+    "many": false,
+    "children": [
+     {
+      "key": "subitem_funding_stream_identifier",
+      "title": "プログラム情報識別子",
+      "path": "name.@id",
+      "many": false,
+      "children": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "key": "item_1739173160642",
+  "title": "データID",
+  "path": null,
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_relation_name",
+    "title": "関連名称",
+    "path": null,
+    "many": true,
+    "children": [
+     {
+      "key": "subitem_relation_name_text",
+      "title": "関連名称",
+      "path": "identifier",
+      "many": false,
+      "children": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "key": "item_1739173335244",
+  "title": "実験（もしくは解析結果・解析ツールなど）の目的",
+  "path": "ams:purposeOfExperiment",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_textarea_value",
+    "title": "値",
+    "path": "ams:purposeOfExperiment.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_textarea_language",
+    "title": "言語",
+    "path": "ams:purposeOfExperiment.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739173447043",
+  "title": "実験状況など（もしくは解析結果・解析ツールの背景など）の説明",
+  "path": "ams:descriptionOfExperimentalCondition",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_textarea_value",
+    "title": "値",
+    "path": "ams:descriptionOfExperimentalCondition.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_textarea_language",
+    "title": "言語",
+    "path": "ams:descriptionOfExperimentalCondition.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739173568107",
+  "title": "データセットの分野",
+  "path": "rdm:field",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_subject",
+    "title": "主題",
+    "path": "rdm:field.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_subject_language",
+    "title": "言語",
+    "path": "rdm:field.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739173777779",
+  "title": "解析対象データ",
+  "path": "ams:analysisType",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "ams:analysisType.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_select_language",
+    "title": "言語",
+    "path": "ams:analysisType.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739173908412",
+  "title": "解析対象データ（その他）",
+  "path": "ams:analysisTypeAlt",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_textarea_value",
+    "title": "値",
+    "path": "ams:analysisTypeAlt.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_textarea_language",
+    "title": "言語",
+    "path": "ams:analysisTypeAlt.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739174293548",
+  "title": "連絡・許諾の要不要",
+  "path": "rdm:licenseInformation.ams:necessityOfContactAndPermission",
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:licenseInformation.ams:necessityOfContactAndPermission.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_select_language",
+    "title": "言語",
+    "path": "rdm:licenseInformation.ams:necessityOfContactAndPermission.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739174395444",
+  "title": "謝辞に記載の要不要",
+  "path": "rdm:licenseInformation.ams:necessityOfIncludingInAcknowledgments",
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:licenseInformation.ams:necessityOfIncludingInAcknowledgments.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_select_language",
+    "title": "言語",
+    "path": "rdm:licenseInformation.ams:necessityOfIncludingInAcknowledgments.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739174494636",
+  "title": "謝辞に記載する名称（個人名、グループ名等）、または謝辞全文",
+  "path": "rdm:licenseInformation.ams:namesToBeIncludedInTheAcknowledgments",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_textarea_value",
+    "title": "値",
+    "path": "rdm:licenseInformation.ams:namesToBeIncludedInTheAcknowledgments.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_textarea_language",
+    "title": "言語",
+    "path": "rdm:licenseInformation.ams:namesToBeIncludedInTheAcknowledgments.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739174633645",
+  "title": "その他条件、あるいは、特記事項",
+  "path": "rdm:licenseInformation.ams:otherConditionsOrSpecialNotes",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_textarea_value",
+    "title": "値",
+    "path": "rdm:licenseInformation.ams:otherConditionsOrSpecialNotes.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_textarea_language",
+    "title": "言語",
+    "path": "rdm:licenseInformation.ams:otherConditionsOrSpecialNotes.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739174747677",
+  "title": "有償・無償",
+  "path": "rdm:licenseInformation.ams:dataPolicyFree",
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:licenseInformation.ams:dataPolicyFree.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_select_language",
+    "title": "言語",
+    "path": "rdm:licenseInformation.ams:dataPolicyFree.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739174837909",
+  "title": "商用利用の可否",
+  "path": "rdm:licenseInformation.ams:availabilityOfCommercialUse",
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:licenseInformation.ams:availabilityOfCommercialUse.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_select_language",
+    "title": "言語",
+    "path": "rdm:licenseInformation.ams:availabilityOfCommercialUse.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175021565",
+  "title": "リポジトリURL・DOIリンク",
+  "path": "rdm:storedIn",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_relation_name",
+    "title": "関連名称",
+    "path": null,
+    "many": true,
+    "children": [
+     {
+      "key": "subitem_relation_name_text",
+      "title": "関連名称",
+      "path": "rdm:storedIn.rdm:url",
+      "many": false,
+      "children": []
+     }
+    ]
+   },
+   {
+    "key": "subitem_relation_type",
+    "title": "関連タイプ",
+    "path": "rdm:storedIn.relationType",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_relation_type_id",
+    "title": "関連識別子",
+    "path": null,
+    "many": false,
+    "children": [
+     {
+      "key": "subitem_relation_type_id_text",
+      "title": "関連識別子",
+      "path": "rdm:storedIn.@id",
+      "many": false,
+      "children": []
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "key": "item_1739175114461",
+  "title": "その他補足事項",
+  "path": "rdm:storedIn",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_textarea_value",
+    "title": "値",
+    "path": "rdm:storedIn.rdm:description",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175182469",
+  "title": "取得データの対象種別",
+  "path": "ams:targetTypeOfAcquiredData",
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_text_value",
+    "title": "値",
+    "path": "ams:targetTypeOfAcquiredData.value",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_text_language",
+    "title": "言語",
+    "path": "ams:targetTypeOfAcquiredData.language",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175451462",
+  "title": "（IC有の場合）第三者提供の同意",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:AccessRights.ams:consentForProvisionToAThirdParty",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175517494",
+  "title": "（IC有の場合）海外提供",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:AccessRights.ams:overseasOfferings",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175598134",
+  "title": "（IC有の場合）産業利用等",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:AccessRights.ams:industrialUse",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175658606",
+  "title": "（IC無の場合）",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:AccessRights.ams:icIsNo",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175714278",
+  "title": "（ヒト）匿名加工の有無",
+  "path": null,
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_select_item",
+    "title": "値",
+    "path": "rdm:AccessRights.ams:anonymousProcessing",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1739175972502",
+  "title": "備考",
+  "path": null,
+  "many": true,
+  "children": [
+   {
+    "key": "subitem_textarea_value",
+    "title": "値",
+    "path": "rdm:description",
+    "many": false,
+    "children": []
+   }
+  ]
+ },
+ {
+  "key": "item_1755053030653",
+  "title": "プロジェクトURL",
+  "path": "ams:projectid",
+  "many": false,
+  "children": [
+   {
+    "key": "subitem_relation_type",
+    "title": "関連タイプ",
+    "path": "$isVersionOf",
+    "many": false,
+    "children": []
+   },
+   {
+    "key": "subitem_relation_type_id",
+    "title": "関連識別子",
+    "path": null,
+    "many": false,
+    "children": [
+     {
+      "key": "subitem_relation_type_id_text",
+      "title": "関連識別子",
+      "path": "ams:projectid.value",
+      "many": false,
+      "children": []
+     }
+    ]
+   }
+  ]
+ }
+]

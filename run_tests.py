@@ -61,6 +61,7 @@ class TestRunner:
         self.weko_user_password = None
         self.weko_institution_name = None
         self.weko_index_name = None
+        self.weko_index_name_ja = None
         self.weko_docker_compose_path = None
         self.sword_mapping_id = 30002
         self.mibyo_db_sword_mapping_id = 51000
@@ -74,12 +75,22 @@ class TestRunner:
         self.gateway_base_url = None
         # Wiki specific parameters
         self.wiki_enabled = False
+        # Institutional admin authorization test
+        self.institutional_admin_authorization_enabled = False
+        self.user_guid = None
+        self.user_name = None
+        self.registration_provider_name = None
+        self.preprint_provider_name = None
+        self.collection_provider_name = None
         # Member display specific parameters
         self.member_display_enabled = False
         # Workflow admin user parameters
         self.idp_name_integrated_admin = None
         self.idp_username_integrated_admin = None
         self.idp_password_integrated_admin = None
+        self.idp_username_integrated_admin_2 = None
+        self.idp_password_integrated_admin_2 = None
+        self.integrated_admin_user_name = None
         self.idp_name_institutional_admin = None
         self.idp_username_institutional_admin = None
         self.idp_password_institutional_admin = None
@@ -512,7 +523,7 @@ class TestRunner:
             name for name in [
                 'weko_url', 'weko_admin_email', 'weko_admin_password',
                 'weko_user_email', 'weko_user_password',
-                'weko_institution_name', 'weko_index_name',
+                'weko_institution_name', 'weko_index_name', 'weko_index_name_ja',
                 'weko_docker_compose_path'
             ]
             if not getattr(self, name, None)
@@ -532,6 +543,7 @@ class TestRunner:
                 weko_user_password=self.weko_user_password,
                 weko_institution_name=self.weko_institution_name,
                 weko_index_name=self.weko_index_name,
+                weko_index_name_ja=self.weko_index_name_ja,
                 weko_docker_compose_path=self.weko_docker_compose_path,
                 sword_mapping_id=self.sword_mapping_id,
                 weko_test_mode=self.weko_test_mode,
@@ -708,6 +720,60 @@ class TestRunner:
                 exclude_notebooks=self.exclude_notebooks,
             )
         )
+        
+    def run_institutional_admin_authorization_tests(self):
+        """Run institutional admin authorization tests."""
+        print('\n=== Institutional Admin Authorization Tests ===')
+
+        if not self.institutional_admin_authorization_enabled:
+            print('Skipping institutional admin authorization tests (institutional_admin_authorization_enabled=false)')
+            return
+
+        missing_params = [
+            name for name in [
+                'idp_name_integrated_admin',
+                'idp_username_integrated_admin',
+                'idp_password_integrated_admin',
+                'idp_username_integrated_admin_2',
+                'idp_password_integrated_admin_2',
+                'integrated_admin_user_name',
+                'idp_name_institutional_admin',
+                'idp_username_institutional_admin',
+                'idp_password_institutional_admin',
+                'user_guid',
+                'user_name',
+                'registration_provider_name',
+                'preprint_provider_name',
+                'collection_provider_name',
+            ]
+            if not getattr(self, name, None)
+        ]
+        if missing_params:
+            print('Error: Missing institutional admin authorization parameters: ' + ', '.join(missing_params))
+            sys.exit(1)
+
+        self.result_notebooks.append(
+            self.run_notebook(
+                '取りまとめ-管理者機能-機関管理者の適切な権限.ipynb',
+                admin_rdm_url=self.admin_rdm_url,
+                idp_name_integrated_admin=self.idp_name_integrated_admin,
+                idp_username_integrated_admin=self.idp_username_integrated_admin,
+                idp_password_integrated_admin=self.idp_password_integrated_admin,
+                idp_username_integrated_admin_2=self.idp_username_integrated_admin_2,
+                idp_password_integrated_admin_2=self.idp_password_integrated_admin_2,
+                integrated_admin_user_name=self.integrated_admin_user_name,
+                idp_name_institutional_admin=self.idp_name_institutional_admin,
+                idp_username_institutional_admin=self.idp_username_institutional_admin,
+                idp_password_institutional_admin=self.idp_password_institutional_admin,
+                user_guid=self.user_guid,
+                user_name=self.user_name,
+                registration_provider_name=self.registration_provider_name,
+                preprint_provider_name=self.preprint_provider_name,
+                collection_provider_name=self.collection_provider_name,
+                skip_failed_test=self.skip_failed_test,
+                exclude_notebooks=self.exclude_notebooks,
+            )
+        )
 
     def check_notebook_errors(self, notebook_path):
         """Check a notebook and all its sub-notebooks recursively for execution errors."""
@@ -815,6 +881,7 @@ class TestRunner:
         self.run_workflow_tests()
         self.run_mapcore_group_tests()
         self.run_wiki_tests()
+        self.run_institutional_admin_authorization_tests()
         self.run_member_display_tests()
 
         result_notebooks = [result_notebook for result_notebook in self.result_notebooks if result_notebook is not None]

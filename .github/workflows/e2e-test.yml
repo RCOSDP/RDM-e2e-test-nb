@@ -195,6 +195,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: true
             mapcore_group_enabled: false
           - name: user-metadata
@@ -212,6 +213,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: admin
@@ -227,6 +229,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
             exclude_notebooks: |
@@ -272,6 +275,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: migration-from-20250906-weko
@@ -301,6 +305,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-minio
@@ -319,6 +324,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: admin-minio
@@ -336,6 +342,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-weko-direct
@@ -353,6 +360,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-weko-workflow
@@ -370,6 +378,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-jupyterhub
@@ -386,6 +395,7 @@ jobs:
             jupyterhub_enabled: true
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-roles
@@ -403,6 +413,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: roles
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-forms
@@ -420,6 +431,7 @@ jobs:
             flowable_enabled: true
             workflow_test_mode: forms
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-batch
@@ -438,6 +450,7 @@ jobs:
             workflow_test_mode: batch
             workflow_batch_project_count: 50
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-wiki
@@ -454,6 +467,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: true
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-metadata-mibyo-db
@@ -471,6 +485,7 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-mapcore-group
@@ -487,7 +502,27 @@ jobs:
             jupyterhub_enabled: false
             flowable_enabled: false
             wiki_enabled: false
+            institutional_admin_authorization_enabled: false
+            member_display_enabled: false
             mapcore_group_enabled: true
+          - name: admin-institutional-admin-authorization
+            display_name: "Admin Tests (Institutional Admin Authorization)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            s3compatsigv4_institutional_storage: false
+            weko_enabled: false
+            mibyo_db_enabled: false
+            jupyterhub_enabled: false
+            flowable_enabled: false
+            wiki_enabled: false
+            institutional_admin_authorization_enabled: true
+            member_display_enabled: false
+            mapcore_group_enabled: false
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
@@ -498,6 +533,7 @@ jobs:
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
       MIBYO_DB_ENABLED: ${{ matrix.test-group.mibyo_db_enabled == true && 'true' || 'false' }}
       WIKI_ENABLED: ${{ (matrix.test-group.wiki_enabled == true || github.event.inputs.enable_wiki == 'true') && 'true' || 'false' }}
+      INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED: ${{ matrix.test-group.institutional_admin_authorization_enabled == true && 'true' || 'false' }}
       MAPCORE_GROUP_ENABLED: ${{ matrix.test-group.mapcore_group_enabled == true && 'true' || 'false' }}
       MINIO_ROOT_USER: e2eadmin
       MINIO_ROOT_PASSWORD: e2epassword123
@@ -607,14 +643,6 @@ jobs:
         path: RDM-osf.io
         fetch-depth: 0
 
-    - name: Checkout WEKO repository
-      if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
-      uses: actions/checkout@v4
-      with:
-        repository: RCOSDP/weko
-        ref: develop_v2.0.0
-        path: weko
-
     - name: Checkout Flowable gateway repository
       if: env.FLOWABLE_ENABLED == 'true'
       uses: actions/checkout@v4
@@ -622,11 +650,19 @@ jobs:
         repository: RCOSDP/RDM-flowable-gateway
         path: RDM-flowable-gateway
 
-    - name: Prepare WEKO compose
+    - name: Prepare FakeWEKO
       if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
-      working-directory: e2e-tests
       run: |
-        .github/scripts/setup_weko.sh prepare ../weko
+        for role in ADMIN USER; do
+          password=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          echo "WEKO_${role}_PASSWORD=$password" >> "$GITHUB_ENV"
+        done
+        cp -r e2e-tests/docker/fakeweko weko
+        mkdir -p weko/nginx/keys
+        openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+          -keyout weko/nginx/keys/server.key -out weko/nginx/keys/server.crt \
+          -subj '/CN=192.168.168.167' -addext 'subjectAltName=IP:192.168.168.167,IP:127.0.0.1'
 
     - name: Prepare Flowable gateway
       if: env.FLOWABLE_ENABLED == 'true'
@@ -832,7 +868,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
 
         # Create test data that will be migrated
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" -e INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED="${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py"
 
         echo "Migration source test data created"
 
@@ -1264,20 +1300,20 @@ jobs:
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         test_rdm_endpoints
 
-    - name: Install WEKO stack
+    - name: Start FakeWEKO
       if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       working-directory: e2e-tests
       run: |
-        .github/scripts/setup_weko.sh install ../weko
+        docker compose -f ../weko/docker-compose2.yml up -d --build
+        curl --retry 20 --retry-connrefused --retry-delay 1 --cacert ../weko/nginx/keys/server.crt https://192.168.168.167
 
     - name: Configure WEKO connection info
       if: env.WEKO_ENABLED == 'true' || env.MIBYO_DB_ENABLED == 'true'
       run: |
+        echo "WEKO_TEST_SERVICE=true" >> $GITHUB_ENV
         echo "WEKO_URL=https://192.168.168.167" >> $GITHUB_ENV
         echo "WEKO_ADMIN_EMAIL=wekosoftware@nii.ac.jp" >> $GITHUB_ENV  # gitleaks:allow
-        echo "WEKO_ADMIN_PASSWORD=uspass123" >> $GITHUB_ENV
         echo "WEKO_USER_EMAIL=contributor@example.org" >> $GITHUB_ENV  # gitleaks:allow
-        echo "WEKO_USER_PASSWORD=uspass123" >> $GITHUB_ENV
         echo "WEKO_INSTITUTION_NAME=Virginia Tech [Test]" >> $GITHUB_ENV
         echo "WEKO_INDEX_NAME=Sample Index" >> $GITHUB_ENV
         echo "WEKO_DOCKER_COMPOSE_PATH=${{ github.workspace }}/weko/docker-compose2.yml" >> $GITHUB_ENV
@@ -1376,7 +1412,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
 
         # Execute the script and capture project IDs
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" -e INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED="${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
         
         # Extract project IDs and names from output
         PROJECT_ID_1=$(grep "PROJECT_ID_testuser1@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
@@ -1391,7 +1427,7 @@ jobs:
           echo "PROJECT_ID_2: ${PROJECT_ID_2}"
           exit 1
         fi
-        
+
         # Export for later steps
         echo "PROJECT_ID_1=${PROJECT_ID_1}" >> $GITHUB_ENV
         echo "PROJECT_ID_2=${PROJECT_ID_2}" >> $GITHUB_ENV
@@ -1401,6 +1437,16 @@ jobs:
         echo "Projects created successfully:"
         echo "  testuser1: ${PROJECT_ID_1} - ${PROJECT_NAME_1}"
         echo "  testuser2: ${PROJECT_ID_2} - ${PROJECT_NAME_2}"
+
+        # Extract user guid from output (only printed when INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED=true)
+        if [ "${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" = "true" ]; then
+          USER_GUID=$(grep "USER_GUID_testuser2@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
+          if [ -z "${USER_GUID}" ]; then
+            echo "Error: Failed to fetch user GUID for testuser2@example.com" >&2
+            exit 1
+          fi
+          echo "USER_GUID=${USER_GUID}" >> $GITHUB_ENV
+        fi
 
     - name: Register e-Rad data
       working-directory: RDM-osf.io
@@ -1437,6 +1483,8 @@ jobs:
         idp_name_integrated_admin: 'FakeCAS'
         idp_username_integrated_admin: 'testuser1@example.com'
         idp_password_integrated_admin: 'testpass123'
+        idp_username_integrated_admin_2: 'testuser7@example.com'
+        idp_password_integrated_admin_2: 'testpass123'
         idp_name_institutional_admin: 'FakeCAS'
         idp_username_institutional_admin: 'teststaff@example.com'
         idp_password_institutional_admin: 'testpass789'
@@ -1482,7 +1530,7 @@ jobs:
         
         # Test settings for ${{ matrix.test-group.name }} group
         skip_failed_test: true  # Continue on failure
-        transition_timeout: 60000
+        transition_timeout: ${{ matrix.test-group.mibyo_db_enabled && 120000 || 60000 }}
         skip_preview_check: true
         skip_130mb_upload: ${{ matrix.test-group.skip_130mb_upload || false }}
         skip_default_storage: ${{ matrix.test-group.skip_default_storage || false }}
@@ -1495,9 +1543,21 @@ jobs:
         member_display_enabled: ${{ matrix.test-group.member_display_enabled == true }}
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
+        institutional_admin_authorization_enabled: ${{ matrix.test-group.institutional_admin_authorization_enabled == true }}
         storages_oauth: []
         mapcore_group_enabled: ${{ matrix.test-group.mapcore_group_enabled == true }}
         EOF
+
+        if [ "${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" = "true" ]; then
+        cat >> base_ci.config.yaml <<'EOF' 
+        user_guid: '${{ env.USER_GUID }}'
+        user_name: 'testuser2@example.com'
+        integrated_admin_user_name: 'testuser1@example.com'
+        registration_provider_name: 'OSF Registries'
+        preprint_provider_name: 'Open Science Framework'
+        collection_provider_name: 'OSF Collection'
+        EOF
+        fi
 
         args=(ci.config.yaml base_ci.config.yaml)
         if [ "${MINIO_ENABLED}" = "true" ]; then
