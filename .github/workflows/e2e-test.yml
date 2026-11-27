@@ -112,10 +112,6 @@ on:
         description: 'RDM-y-websocket branch (default: master)'
         required: false
         default: ''
-      test_config:
-        description: 'Test configuration file to use'
-        required: false
-        default: 'ci.config.yaml'
       skip_failed:
         description: 'Continue running tests even if some fail'
         required: false
