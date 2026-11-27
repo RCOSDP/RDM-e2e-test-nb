@@ -67,6 +67,22 @@ on:
         description: 'RDMFS Docker image (default: gcr.io/nii-ap-ops/rdmfs:2026.02.1)'
         required: false
         default: ''
+      binderhub_image:
+        description: 'BinderHub image (default: gcr.io/nii-ap-ops/k8s-binderhub-binderhub:0.2.5-20261111)'
+        required: false
+        default: ''
+      binderhub_jupyterhub_image:
+        description: 'JupyterHub image for the BinderHub tests (default: gcr.io/nii-ap-ops/k8s-hub:4.1.0-20261106)'
+        required: false
+        default: ''
+      binderhub_source:
+        description: 'Build the BinderHub image from owner/repo@branch (e.g. RCOSDP/CS-binderhub@master)'
+        required: false
+        default: ''
+      binderhub_jupyterhub_source:
+        description: 'Install JupyterHub for the BinderHub tests from owner/repo@branch (e.g. RCOSDP/CS-jupyterhub@master)'
+        required: false
+        default: ''
       enable_wiki:
         description: 'Enable Wiki feature build (builds wiki webpack bundle and OSF image with wiki JS)'
         required: false
@@ -104,11 +120,17 @@ on:
           - 'true'
           - 'false'
 
+env:
+  BINDERHUB_DEFAULT_IMAGE: gcr.io/nii-ap-ops/k8s-binderhub-binderhub:0.2.5-20261111
+  BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE: gcr.io/nii-ap-ops/k8s-hub:4.1.0-20261106
+
 jobs:
   build-images:
     runs-on: ubuntu-latest
     outputs:
       wb_custom: ${{ steps.wb_params.outputs.branch != '' }}
+      binderhub_custom: ${{ steps.binderhub_params.outputs.binderhub_source != '' }}
+      binderhub_jupyterhub_custom: ${{ steps.binderhub_params.outputs.jupyterhub_source != '' }}
     steps:
     - name: Checkout test repository
       uses: actions/checkout@v4
@@ -167,6 +189,49 @@ jobs:
         docker build -t rdm-waterbutler:custom .
         cd ..
         docker save -o prebuilt-images/rdm-waterbutler-custom.tar rdm-waterbutler:custom
+
+    - name: Parse BinderHub source parameters
+      id: binderhub_params
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
+          echo "binderhub_source=$(grep -oP '^-\s*BINDERHUB_SOURCE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+          echo "jupyterhub_source=$(grep -oP '^-\s*BINDERHUB_JUPYTERHUB_SOURCE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+        else
+          echo "binderhub_source=${{ github.event.inputs.binderhub_source }}" >> $GITHUB_OUTPUT
+          echo "jupyterhub_source=${{ github.event.inputs.binderhub_jupyterhub_source }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build custom BinderHub image
+      if: steps.binderhub_params.outputs.binderhub_source != ''
+      run: |
+        BINDERHUB_SOURCE="${{ steps.binderhub_params.outputs.binderhub_source }}"
+        BINDERHUB_REPO="${BINDERHUB_SOURCE%@*}"
+        BINDERHUB_BRANCH="${BINDERHUB_SOURCE#*@}"
+        echo "Building custom BinderHub image from ${BINDERHUB_REPO}@${BINDERHUB_BRANCH}"
+        git clone --depth=1 -b "$BINDERHUB_BRANCH" "https://github.com/${BINDERHUB_REPO}.git" CS-binderhub
+        cd CS-binderhub
+        # Same steps as the chartpress build of the deployed image
+        python3 -m pip install build
+        python3 -m build --wheel .
+        docker build -f helm-chart/images/binderhub/Dockerfile -t binderhub:custom .
+        cd ..
+        docker save -o prebuilt-images/binderhub-custom.tar binderhub:custom
+
+    - name: Build custom JupyterHub image for BinderHub tests
+      if: steps.binderhub_params.outputs.jupyterhub_source != ''
+      run: |
+        JUPYTERHUB_SOURCE="${{ steps.binderhub_params.outputs.jupyterhub_source }}"
+        JUPYTERHUB_REPO="${JUPYTERHUB_SOURCE%@*}"
+        JUPYTERHUB_BRANCH="${JUPYTERHUB_SOURCE#*@}"
+        echo "Building custom JupyterHub image from ${JUPYTERHUB_REPO}@${JUPYTERHUB_BRANCH}"
+        git clone --depth=1 -b "$JUPYTERHUB_BRANCH" "https://github.com/${JUPYTERHUB_REPO}.git" CS-jupyterhub
+        docker build -f e2e-tests/docker/binderhub/Dockerfile.jupyterhub-source \
+          --build-arg JUPYTERHUB_IMAGE="$BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE" \
+          -t binderhub-jupyterhub:custom CS-jupyterhub
+        docker save -o prebuilt-images/binderhub-jupyterhub-custom.tar binderhub-jupyterhub:custom
 
     - name: Upload prebuilt images
       uses: actions/upload-artifact@v4
@@ -589,6 +654,19 @@ jobs:
             institutional_admin_authorization_enabled: true
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: user-binderhub-oauth
+            display_name: "User Tests (BinderHub OAuth)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            binderhub_enabled: true
+            flowable_enabled: false
     name: E2E ${{ matrix.test-group.display_name }}
     env:
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
@@ -598,6 +676,7 @@ jobs:
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
+      BINDERHUB_ENABLED: ${{ matrix.test-group.binderhub_enabled == true && 'true' || 'false' }}
       JUPYTERHUB_ENABLED: ${{ matrix.test-group.jupyterhub_enabled == true && 'true' || 'false' }}
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
       MIBYO_DB_ENABLED: ${{ matrix.test-group.mibyo_db_enabled == true && 'true' || 'false' }}
@@ -844,6 +923,15 @@ jobs:
           docker load -i prebuilt-images/rdm-waterbutler-custom.tar
           echo "WB_IMAGE=rdm-waterbutler:custom" >> "$GITHUB_ENV"
         fi
+
+        if [ "${BINDERHUB_ENABLED}" = "true" ] && [ "${{ needs.build-images.outputs.binderhub_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/binderhub-custom.tar
+          echo "BINDERHUB_CUSTOM_IMAGE=binderhub:custom" >> "$GITHUB_ENV"
+        fi
+        if [ "${BINDERHUB_ENABLED}" = "true" ] && [ "${{ needs.build-images.outputs.binderhub_jupyterhub_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/binderhub-jupyterhub-custom.tar
+          echo "BINDERHUB_CUSTOM_JUPYTERHUB_IMAGE=binderhub-jupyterhub:custom" >> "$GITHUB_ENV"
+        fi
         rm -rf prebuilt-images
 
     - name: Install Docker Compose
@@ -1055,6 +1143,11 @@ jobs:
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         setup_config_files
 
+    - name: Prepare OAuth BinderHub settings
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh prepare ../RDM-osf.io
+
     - name: Parse PR body and workflow parameters
       run: |
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -1188,6 +1281,8 @@ jobs:
           TLJH_PLUGIN_OVERRIDE=$(grep -oP '^-\s*TLJH_PLUGIN:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
           TLJH_REPO2DOCKER_IMAGE_OVERRIDE=$(grep -oP '^-\s*TLJH_REPO2DOCKER_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
           TLJH_RDMFS_IMAGE_OVERRIDE=$(grep -oP '^-\s*TLJH_RDMFS_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          BINDERHUB_IMAGE_OVERRIDE=$(grep -oP '^-\s*BINDERHUB_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE=$(grep -oP '^-\s*BINDERHUB_JUPYTERHUB_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
 
           # Export for use in later steps
           echo "EXCLUDE_NOTEBOOKS=$EXCLUDE_NOTEBOOKS_OVERRIDE" >> $GITHUB_ENV
@@ -1195,6 +1290,8 @@ jobs:
           echo "TLJH_PLUGIN_OVERRIDE=$TLJH_PLUGIN_OVERRIDE" >> $GITHUB_ENV
           echo "TLJH_REPO2DOCKER_IMAGE_OVERRIDE=$TLJH_REPO2DOCKER_IMAGE_OVERRIDE" >> $GITHUB_ENV
           echo "TLJH_RDMFS_IMAGE_OVERRIDE=$TLJH_RDMFS_IMAGE_OVERRIDE" >> $GITHUB_ENV
+          echo "BINDERHUB_IMAGE_OVERRIDE=$BINDERHUB_IMAGE_OVERRIDE" >> $GITHUB_ENV
+          echo "BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE=$BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE" >> $GITHUB_ENV
 
           # Use overrides if found, otherwise defaults
           # If WIKI_ENABLED, OSF_IMAGE was already set to the wiki-built image; preserve it
@@ -1472,6 +1569,14 @@ jobs:
         echo "GATEWAY_BASE_URL=http://192.168.168.167:8088/" >> $GITHUB_ENV
         echo "WORKFLOW_BATCH_PROJECT_COUNT=${{ matrix.test-group.workflow_batch_project_count || 50 }}" >> $GITHUB_ENV
         echo "WORKFLOW_TEST_MODE=${{ matrix.test-group.workflow_test_mode }}" >> $GITHUB_ENV
+
+    - name: Install OAuth BinderHub stack
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      env:
+        BINDERHUB_IMAGE: ${{ env.BINDERHUB_CUSTOM_IMAGE || env.BINDERHUB_IMAGE_OVERRIDE || github.event.inputs.binderhub_image || env.BINDERHUB_DEFAULT_IMAGE }}
+        JUPYTERHUB_IMAGE: ${{ env.BINDERHUB_CUSTOM_JUPYTERHUB_IMAGE || env.BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE || github.event.inputs.binderhub_jupyterhub_image || env.BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE }}
+      run: .github/scripts/setup_binderhub.sh install
 
     - name: Install TLJH stack
       if: env.JUPYTERHUB_ENABLED == 'true'
@@ -1800,6 +1905,9 @@ jobs:
           args+=(--wiki)
         fi
 
+        if [ "${BINDERHUB_ENABLED}" = "true" ]; then
+          args+=(--binderhub)
+        fi
         .github/scripts/generate_ci_config.sh "${args[@]}"
         rm base_ci.config.yaml
 
@@ -1966,6 +2074,24 @@ jobs:
         path: e2e-tests/weko-docker-logs.txt
         retention-days: 7
 
+    - name: Collect OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        docker compose -f docker/binderhub/compose.yaml logs --no-color > binderhub-logs.txt 2>&1
+        for container in $(docker ps -a --filter name=rdm-e2e-binder- --format '{{.Names}}'); do
+          echo "Container: $container" >> binderhub-logs.txt
+          docker logs "$container" >> binderhub-logs.txt 2>&1
+        done
+
+    - name: Upload OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binderhub-logs-${{ matrix.test-group.name }}
+        path: e2e-tests/binderhub-logs.txt
+        retention-days: 7
+
     - name: Collect TLJH logs
       if: always() && env.JUPYTERHUB_ENABLED == 'true'
       run: |
@@ -2012,6 +2138,11 @@ jobs:
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_weko.sh down ../weko
+
+    - name: Stop OAuth BinderHub stack
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh down
 
     - name: Stop TLJH stack
       if: always() && env.JUPYTERHUB_ENABLED == 'true'
