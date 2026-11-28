@@ -1,0 +1,4 @@
+<MetadataProvider xmlns="urn:mace:shibboleth:2.0:metadata"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="urn:mace:shibboleth:2.0:metadata http://shibboleth.net/schema/idp/shibboleth-metadata.xsd"
+    id="e2e-sp" xsi:type="FilesystemMetadataProvider" metadataFile="/exchange/sp-metadata.xml" />

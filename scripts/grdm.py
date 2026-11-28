@@ -621,20 +621,20 @@ async def open_edit_wiki(page, transition_timeout=60000):
     await page.wait_for_timeout(500)
 
 async def select_text_range(page, text, transition_timeout=60000):
-    editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
-    await expect(editor_locator).to_contain_text(text, timeout=transition_timeout)
-    await editor_locator.focus()
-    await editor_locator.evaluate("""
-    (el, targetText) => {
-        const p = Array.from(el.querySelectorAll('p')).find(par => par.innerText === targetText);
-        if (!p) throw new Error('Wiki paragraph to select was not found');
+    editor = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
+    paragraph = editor.locator('p').filter(has_text=re.compile(rf'^{re.escape(text)}$'))
+    await expect(paragraph).to_be_visible(timeout=transition_timeout)
+    await editor.focus()
+    await paragraph.evaluate("""
+    paragraph => {
         const range = document.createRange();
-        range.selectNodeContents(p);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
+        range.selectNodeContents(paragraph);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
     }
-    """, text)
+    """)
+
 
 async def fill_text(page, text, transition_timeout=60000):
     editor_locator = page.locator('#mEditor .ProseMirror[contenteditable="true"]')
@@ -661,7 +661,8 @@ async def click_wiki_menu_save(page, menu_list, transition_timeout=60000):
 
         raise ValueError(f"Menu item '{menu}' not found in wiki menu bar.")
 
-    await page.locator('//input[@type="submit" and @value="保存"]').click()
+    async with page.expect_navigation(timeout=transition_timeout):
+        await page.locator('#mEditorFooter input[type="submit"][value="保存"]').click()
     await expect(page.locator('//span[contains(@class, "title-text")]//b[contains(text(), "プロジェクトのWiki")]')).to_be_visible(timeout=transition_timeout)
 
 async def set_text_color(color_input, r, g, b):

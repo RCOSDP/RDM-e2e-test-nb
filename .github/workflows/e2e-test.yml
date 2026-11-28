@@ -24,7 +24,7 @@ on:
           - 'true'
           - 'false'
       osf_image:
-        description: 'Custom OSF image (default: niicloudoperation/rdm-osf.io:latest)'
+        description: 'Base image for the shared Wiki-enabled OSF image (default: build the RDM Dockerfile)'
         required: false
         default: ''
       ember_image:
@@ -32,7 +32,15 @@ on:
         required: false
         default: ''
       cas_image:
-        description: 'Custom CAS image (default: niicloudoperation/rdm-cas-overlay:latest)'
+        description: 'Real CAS image; overrides CAS source settings for Shibboleth tests (not FakeCAS)'
+        required: false
+        default: ''
+      cas_source:
+        description: 'Shibboleth login CAS source as owner/repo@ref (default: RCOSDP/RDM-cas-overlay@develop)'
+        required: false
+        default: ''
+      sp_source:
+        description: 'Shibboleth SP source as owner/repo@ref (default: RCOSDP/RDM-Shibboleth-SP@main)'
         required: false
         default: ''
       mfr_image:
@@ -67,34 +75,43 @@ on:
         description: 'RDMFS Docker image (default: gcr.io/nii-ap-ops/rdmfs:2026.02.1)'
         required: false
         default: ''
+      binderhub_image:
+        description: 'BinderHub image (default: gcr.io/nii-ap-ops/k8s-binderhub-binderhub:0.2.5-20261111)'
+        required: false
+        default: ''
+      binderhub_jupyterhub_image:
+        description: 'JupyterHub image for the BinderHub tests (default: gcr.io/nii-ap-ops/k8s-hub:4.1.0-20261106)'
+        required: false
+        default: ''
+      binderhub_source:
+        description: 'Build the BinderHub image from owner/repo@branch (e.g. RCOSDP/CS-binderhub@master)'
+        required: false
+        default: ''
+      binderhub_jupyterhub_source:
+        description: 'Install JupyterHub for the BinderHub tests from owner/repo@branch (e.g. RCOSDP/CS-jupyterhub@master)'
+        required: false
+        default: ''
       enable_wiki:
-        description: 'Enable Wiki feature build (builds wiki webpack bundle and OSF image with wiki JS)'
+        description: 'Run the Wiki E2E notebooks in all matrix jobs'
         required: false
         default: 'false'
         type: choice
         options:
           - 'false'
           - 'true'
-      wiki_repository:
-        description: 'RDM-wiki-frontend repository (default: RCOSDP/RDM-wiki-frontend)'
+      skip_wiki_collaboration:
+        description: 'Skip the Wiki tests that edit the same page in two tabs'
+        required: false
+        default: true
+        type: boolean
+      wiki_source:
+        description: 'Wiki frontend source as owner/repo@branch-or-tag (default: RCOSDP/RDM-wiki-frontend@develop)'
         required: false
         default: ''
-      wiki_branch:
-        description: 'RDM-wiki-frontend branch (default: develop)'
+      y_websocket_source:
+        description: 'Wiki y-websocket source as owner/repo@branch-or-tag (default: RCOSDP/RDM-y-websocket@master)'
         required: false
         default: ''
-      y_websocket_repository:
-        description: 'RDM-y-websocket repository (default: RCOSDP/RDM-y-websocket)'
-        required: false
-        default: ''
-      y_websocket_branch:
-        description: 'RDM-y-websocket branch (default: master)'
-        required: false
-        default: ''
-      test_config:
-        description: 'Test configuration file to use'
-        required: false
-        default: 'ci.config.yaml'
       skip_failed:
         description: 'Continue running tests even if some fail'
         required: false
@@ -104,16 +121,158 @@ on:
           - 'true'
           - 'false'
 
+env:
+  BINDERHUB_DEFAULT_IMAGE: gcr.io/nii-ap-ops/k8s-binderhub-binderhub:0.2.5-20261111
+  BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE: gcr.io/nii-ap-ops/k8s-hub:4.1.0-20261106
+
 jobs:
   build-images:
     runs-on: ubuntu-latest
     outputs:
       wb_custom: ${{ steps.wb_params.outputs.branch != '' }}
+      rdm_repository: ${{ steps.rdm_config.outputs.repository }}
+      rdm_base_sha: ${{ steps.rdm_target.outputs.base_sha }}
+      rdm_target_sha: ${{ steps.rdm_target.outputs.target_sha }}
+      osf_image: ${{ steps.osf_image.outputs.tag }}
+      osf_image_id: ${{ steps.osf_image.outputs.image_id }}
+      binderhub_custom: ${{ steps.binderhub_params.outputs.binderhub_source != '' }}
+      binderhub_jupyterhub_custom: ${{ steps.binderhub_params.outputs.jupyterhub_source != '' }}
+
+      y_websocket_repository: ${{ steps.source_params.outputs.y_websocket_repository }}
+      y_websocket_branch: ${{ steps.source_params.outputs.y_websocket_branch }}
+      shibboleth_cas_image: ${{ steps.source_params.outputs.cas_image || 'rdm-cas:shibboleth' }}
     steps:
     - name: Checkout test repository
       uses: actions/checkout@v4
       with:
         path: e2e-tests
+
+    - name: Determine RDM repository and branch
+      id: rdm_config
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+        INPUT_REPO: ${{ inputs.rdm_repository }}
+        INPUT_BRANCH: ${{ inputs.rdm_branch }}
+        INPUT_MERGE: ${{ inputs.merge_custom_rdm }}
+      run: |
+        BASE_REPO="RCOSDP/RDM-osf.io"
+        BASE_BRANCH="develop"
+        CUSTOM_REPO=""
+        CUSTOM_BRANCH=""
+        MERGE_REQUIRED="false"
+        MERGE_FLAG="true"
+        TARGET_REPO="$BASE_REPO"
+        TARGET_BRANCH="$BASE_BRANCH"
+
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
+          RDM_REPO=$(grep -oP '^-\s*RDM_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          RDM_BRANCH=$(grep -oP '^-\s*RDM_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          RDM_MERGE=$(grep -oP '^-\s*RDM_MERGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' | tr '[:upper:]' '[:lower:]' || true)
+
+          if [[ -n "$RDM_MERGE" ]]; then
+            case "$RDM_MERGE" in
+              false|no|off)
+                MERGE_FLAG="false"
+                ;;
+              true|yes|on)
+                MERGE_FLAG="true"
+                ;;
+            esac
+          fi
+
+          if [[ -n "$RDM_REPO" || -n "$RDM_BRANCH" ]]; then
+            CUSTOM_REPO="${RDM_REPO:-$BASE_REPO}"
+            CUSTOM_BRANCH="${RDM_BRANCH:-$BASE_BRANCH}"
+          fi
+        else
+          # Use workflow inputs or defaults
+
+          if [[ -n "$INPUT_MERGE" ]]; then
+            INPUT_MERGE=$(echo "$INPUT_MERGE" | tr '[:upper:]' '[:lower:]')
+            case "$INPUT_MERGE" in
+              false|no|off)
+                MERGE_FLAG="false"
+                ;;
+              true|yes|on)
+                MERGE_FLAG="true"
+                ;;
+            esac
+          fi
+
+          if [[ -n "$INPUT_REPO" || -n "$INPUT_BRANCH" ]]; then
+            CUSTOM_REPO="${INPUT_REPO:-$BASE_REPO}"
+            CUSTOM_BRANCH="${INPUT_BRANCH:-$BASE_BRANCH}"
+          fi
+        fi
+
+        if [[ -n "$CUSTOM_REPO" || -n "$CUSTOM_BRANCH" ]]; then
+          CUSTOM_REPO="${CUSTOM_REPO:-$BASE_REPO}"
+          CUSTOM_BRANCH="${CUSTOM_BRANCH:-$BASE_BRANCH}"
+
+          if [[ "$MERGE_FLAG" == "true" ]]; then
+            MERGE_REQUIRED="true"
+          else
+            TARGET_REPO="$CUSTOM_REPO"
+            TARGET_BRANCH="$CUSTOM_BRANCH"
+          fi
+        fi
+
+        echo "Base RDM repository: $BASE_REPO @ $BASE_BRANCH"
+        if [[ "$MERGE_REQUIRED" == "true" ]]; then
+          echo "Merging custom RDM source: $CUSTOM_REPO @ $CUSTOM_BRANCH"
+        elif [[ -n "$CUSTOM_REPO" || -n "$CUSTOM_BRANCH" ]]; then
+          echo "Using custom RDM source without merge: $CUSTOM_REPO @ $CUSTOM_BRANCH"
+        fi
+        echo "Checkout target: $TARGET_REPO @ $TARGET_BRANCH"
+
+        echo "repository=$TARGET_REPO" >> $GITHUB_OUTPUT
+        echo "branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+        echo "custom_repository=$CUSTOM_REPO" >> $GITHUB_OUTPUT
+        echo "custom_branch=$CUSTOM_BRANCH" >> $GITHUB_OUTPUT
+        echo "merge_required=$MERGE_REQUIRED" >> $GITHUB_OUTPUT
+
+    - name: Checkout RDM-osf.io
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.rdm_config.outputs.repository }}
+        ref: ${{ steps.rdm_config.outputs.branch }}
+        path: RDM-osf.io
+        fetch-depth: 0
+
+    - name: Prepare shared RDM target
+      id: rdm_target
+      working-directory: RDM-osf.io
+      env:
+        BASE_REPO: ${{ steps.rdm_config.outputs.repository }}
+        CUSTOM_REPO: ${{ steps.rdm_config.outputs.custom_repository }}
+        CUSTOM_BRANCH: ${{ steps.rdm_config.outputs.custom_branch }}
+        MERGE_REQUIRED: ${{ steps.rdm_config.outputs.merge_required }}
+      run: |
+        BASE_SHA=$(git rev-parse HEAD)
+        if [[ "$MERGE_REQUIRED" == "true" ]]; then
+          if [[ "$CUSTOM_REPO" == "$BASE_REPO" ]]; then
+            remote=origin
+          else
+            remote="https://github.com/${CUSTOM_REPO}.git"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "RDM-e2e-test-nb@example.com"
+          git fetch -- "$remote" "$CUSTOM_BRANCH"
+          git merge --no-ff --no-commit FETCH_HEAD
+          if ! git diff --quiet --cached; then
+            git commit --no-verify -m "Temporary merge of ${CUSTOM_REPO}@${CUSTOM_BRANCH} for E2E tests"
+          fi
+        fi
+
+        TARGET_SHA=$(git rev-parse HEAD)
+        echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+        echo "target_sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
+        if [[ "$TARGET_SHA" != "$BASE_SHA" ]]; then
+          mkdir -p ../prebuilt-images
+          git branch e2e-target "$TARGET_SHA"
+          git bundle create ../prebuilt-images/rdm-target.bundle refs/heads/e2e-target "^$BASE_SHA"
+        fi
 
     - name: Build Elasticsearch image with Kuromoji (amd64)
       working-directory: e2e-tests
@@ -167,6 +326,188 @@ jobs:
         docker build -t rdm-waterbutler:custom .
         cd ..
         docker save -o prebuilt-images/rdm-waterbutler-custom.tar rdm-waterbutler:custom
+
+    - name: Parse CAS, SP and Wiki source parameters
+      id: source_params
+      run: |
+        python3 - <<'PY'
+        import json
+        import os
+        import re
+
+        with open(os.environ['GITHUB_EVENT_PATH']) as source:
+            event = json.load(source)
+        if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
+            parameters = dict(re.findall(
+                r'^-[ \t]*(CAS_IMAGE|(?:CAS|SP|WIKI|Y_WEBSOCKET)_(?:REPOSITORY|BRANCH)):[ \t]*([^\r\n]*)',
+                event['pull_request']['body'] or '', re.MULTILINE))
+        elif os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch':
+            inputs = event['inputs']
+            parameters = {'CAS_IMAGE': inputs.get('cas_image', '')}
+            for service in ('cas', 'sp', 'wiki', 'y_websocket'):
+                source = inputs.get(f'{service}_source', '').strip()
+                if source:
+                    match = re.fullmatch(r'([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^\s]+)', source)
+                    if not match:
+                        raise ValueError(f'{service}_source must be owner/repo@ref')
+                    parameters[f'{service.upper()}_REPOSITORY'], parameters[f'{service.upper()}_BRANCH'] = match.groups()
+        else:
+            parameters = {}
+        defaults = {
+            'CAS_IMAGE': '',
+            'CAS_REPOSITORY': 'RCOSDP/RDM-cas-overlay',
+            'CAS_BRANCH': 'develop',
+            'SP_REPOSITORY': 'RCOSDP/RDM-Shibboleth-SP',
+            'SP_BRANCH': 'main',
+            'WIKI_REPOSITORY': 'RCOSDP/RDM-wiki-frontend',
+            'WIKI_BRANCH': 'develop',
+            'Y_WEBSOCKET_REPOSITORY': 'RCOSDP/RDM-y-websocket',
+            'Y_WEBSOCKET_BRANCH': 'master',
+        }
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            for key, default in defaults.items():
+                value = parameters.get(key, '').strip() or default
+                print(f'{key.lower()}={value}', file=output)
+        PY
+
+    - name: Build shared Wiki-enabled OSF image
+      id: osf_image
+      shell: bash
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+        WIKI_REPO: ${{ steps.source_params.outputs.wiki_repository }}
+        WIKI_BRANCH: ${{ steps.source_params.outputs.wiki_branch }}
+        OSF_BASE_IMAGE: ${{ inputs.osf_image }}
+      run: |
+        if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+          OSF_BASE_IMAGE=$(grep -m1 -oP '^-\s*OSF_IMAGE:\s*\K.*$' <<< "$PR_BODY" | tr -d ' \r' || true)
+        fi
+
+        git clone --depth=1 --branch "$WIKI_BRANCH" -- "https://github.com/${WIKI_REPO}.git" RDM-wiki-frontend
+        echo "Wiki frontend commit: $(git -C RDM-wiki-frontend rev-parse HEAD)"
+        cp -a RDM-osf.io wiki-osf
+        cp -a RDM-wiki-frontend/. wiki-osf/
+        docker build --pull -t rdm-wiki-bundle:ci wiki-osf/
+
+        mkdir -p wiki-output prebuilt-images/wiki
+        container=$(docker create rdm-wiki-bundle:ci bash)
+        trap 'docker rm -f "$container" >/dev/null' EXIT
+        docker cp "$container:/code/website/static/public/js/." wiki-output/
+        docker rm "$container"
+        trap - EXIT
+        docker image rm rdm-wiki-bundle:ci
+
+        bundles=(wiki-output/wiki-edit-page.*.js)
+        if [[ "${#bundles[@]}" != 1 || ! -f "${bundles[0]}" ]]; then
+          echo "Expected one built Wiki bundle" >&2
+          exit 1
+        fi
+        cp "${bundles[0]}" prebuilt-images/wiki/wiki-edit-page.js
+        if [[ -f "${bundles[0]}.map" ]]; then
+          cp "${bundles[0]}.map" prebuilt-images/wiki/
+        fi
+        # The target checkout is also mounted into /code by the E2E Compose stack.
+        cp -r prebuilt-images/wiki/. RDM-osf.io/website/static/js/pages/
+
+        image=rdm-osf-wiki:ci
+        if [[ -n "$OSF_BASE_IMAGE" ]]; then
+          docker build --pull --build-arg "OSF_BASE_IMAGE=$OSF_BASE_IMAGE" -t "$image" -f - prebuilt-images/wiki <<'DOCKERFILE'
+        ARG OSF_BASE_IMAGE
+        FROM ${OSF_BASE_IMAGE}
+        COPY . /code/website/static/js/pages/
+        DOCKERFILE
+        else
+          docker build -t "$image" RDM-osf.io/
+        fi
+        image_id=$(docker image inspect --format '{{.Id}}' "$image")
+        docker image save "$image" | gzip -1 > prebuilt-images/rdm-osf-wiki.tar.gz
+        echo "tag=$image" >> "$GITHUB_OUTPUT"
+        echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+
+    - name: Parse BinderHub source parameters
+      id: binderhub_params
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
+          echo "binderhub_source=$(grep -oP '^-\s*BINDERHUB_SOURCE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+          echo "jupyterhub_source=$(grep -oP '^-\s*BINDERHUB_JUPYTERHUB_SOURCE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)" >> $GITHUB_OUTPUT
+        else
+          echo "binderhub_source=${{ github.event.inputs.binderhub_source }}" >> $GITHUB_OUTPUT
+          echo "jupyterhub_source=${{ github.event.inputs.binderhub_jupyterhub_source }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build custom BinderHub image
+      if: steps.binderhub_params.outputs.binderhub_source != ''
+      run: |
+        BINDERHUB_SOURCE="${{ steps.binderhub_params.outputs.binderhub_source }}"
+        BINDERHUB_REPO="${BINDERHUB_SOURCE%@*}"
+        BINDERHUB_BRANCH="${BINDERHUB_SOURCE#*@}"
+        echo "Building custom BinderHub image from ${BINDERHUB_REPO}@${BINDERHUB_BRANCH}"
+        git clone --depth=1 -b "$BINDERHUB_BRANCH" "https://github.com/${BINDERHUB_REPO}.git" CS-binderhub
+        cd CS-binderhub
+        # Same steps as the chartpress build of the deployed image
+        python3 -m pip install build
+        python3 -m build --wheel .
+        docker build -f helm-chart/images/binderhub/Dockerfile -t binderhub:custom .
+        cd ..
+        docker save -o prebuilt-images/binderhub-custom.tar binderhub:custom
+
+    - name: Build custom JupyterHub image for BinderHub tests
+      if: steps.binderhub_params.outputs.jupyterhub_source != ''
+      run: |
+        JUPYTERHUB_SOURCE="${{ steps.binderhub_params.outputs.jupyterhub_source }}"
+        JUPYTERHUB_REPO="${JUPYTERHUB_SOURCE%@*}"
+        JUPYTERHUB_BRANCH="${JUPYTERHUB_SOURCE#*@}"
+        echo "Building custom JupyterHub image from ${JUPYTERHUB_REPO}@${JUPYTERHUB_BRANCH}"
+        git clone --depth=1 -b "$JUPYTERHUB_BRANCH" "https://github.com/${JUPYTERHUB_REPO}.git" CS-jupyterhub
+        docker build -f e2e-tests/docker/binderhub/Dockerfile.jupyterhub-source \
+          --build-arg JUPYTERHUB_IMAGE="$BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE" \
+          -t binderhub-jupyterhub:custom CS-jupyterhub
+        docker save -o prebuilt-images/binderhub-jupyterhub-custom.tar binderhub-jupyterhub:custom
+
+    - name: Checkout CAS source
+      if: steps.source_params.outputs.cas_image == ''
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.source_params.outputs.cas_repository }}
+        ref: ${{ steps.source_params.outputs.cas_branch }}
+        path: RDM-cas-overlay
+
+    - name: Checkout Shibboleth SP source
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ steps.source_params.outputs.sp_repository }}
+        ref: ${{ steps.source_params.outputs.sp_branch }}
+        path: RDM-Shibboleth-SP
+
+    - name: Build Shibboleth authentication images
+      env:
+        CAS_IMAGE: ${{ steps.source_params.outputs.cas_image }}
+        CAS_REPOSITORY: ${{ steps.source_params.outputs.cas_repository }}
+        SP_REPOSITORY: ${{ steps.source_params.outputs.sp_repository }}
+      run: |
+        mkdir -p shibboleth-images
+        images=(rdm-sp:shibboleth rdm-idp:shibboleth)
+        if [[ -n "$CAS_IMAGE" ]]; then
+          printf 'CAS_IMAGE=%s\n' "$CAS_IMAGE" > shibboleth-images/revisions.txt
+        else
+          docker build --target dist -t rdm-cas:shibboleth RDM-cas-overlay
+          images+=(rdm-cas:shibboleth)
+          printf 'CAS_SOURCE=%s@%s\n' "$CAS_REPOSITORY" "$(git -C RDM-cas-overlay rev-parse HEAD)" > shibboleth-images/revisions.txt
+        fi
+        docker build -t rdm-sp:shibboleth RDM-Shibboleth-SP
+        docker build -t rdm-idp:shibboleth e2e-tests/docker/shibboleth/idp
+        docker save -o shibboleth-images/authentication.tar "${images[@]}"
+        printf 'SP_SOURCE=%s@%s\n' "$SP_REPOSITORY" "$(git -C RDM-Shibboleth-SP rev-parse HEAD)" >> shibboleth-images/revisions.txt
+
+    - name: Upload Shibboleth authentication images
+      uses: actions/upload-artifact@v4
+      with:
+        name: shibboleth-images
+        path: shibboleth-images/
+        retention-days: 7
 
     - name: Upload prebuilt images
       uses: actions/upload-artifact@v4
@@ -244,6 +585,44 @@ jobs:
               テスト手順-管理者機能-アナウンス.ipynb
               テスト手順-管理者機能-証跡管理.ipynb
               テスト手順-管理者機能-NIIストレージのクォータ.ipynb
+          - name: user-shibboleth
+            display_name: "User Login (Shibboleth)"
+            shibboleth_enabled: true
+            shibboleth_role: user
+            include_admin: true
+            skip_admin: true
+            skip_login: false
+            skip_metadata: true
+            skip_default_storage: true
+            skip_autofill: true
+            exclude_notebooks: |
+              テスト手順-未ログイン.ipynb
+          - name: admin-shibboleth
+            display_name: "Admin Login (Shibboleth)"
+            shibboleth_enabled: true
+            shibboleth_role: admin
+            include_admin: true
+            skip_admin: false
+            skip_login: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_autofill: true
+            exclude_notebooks: |
+              テスト手順-管理者機能-未ログイン.ipynb
+              テスト手順-管理者機能-ログイン可否設定.ipynb
+              テスト手順-管理者機能-ノード管理.ipynb
+              テスト手順-管理者機能-ユーザ管理.ipynb
+              テスト手順-管理者機能-機関設定.ipynb
+              テスト手順-管理者機能-RDMユーザメール.ipynb
+              テスト手順-管理者機能-RDM登録.ipynb
+              テスト手順-管理者機能-メンテナンスアラート.ipynb
+              テスト手順-管理者機能-アドオン利用制御.ipynb
+              テスト手順-管理者機能-利用統計.ipynb
+              テスト手順-管理者機能-アナウンス.ipynb
+              テスト手順-管理者機能-証跡管理.ipynb
+              テスト手順-管理者機能-NIIストレージのクォータ.ipynb
+              テスト手順-管理者機能-機関ストレージのクォータ.ipynb
+              取りまとめ-管理者機能-プロジェクト制限数.ipynb
           - name: migration-from-20250906
             timeout_minutes: 210
             display_name: "Migration Test from 20250906"
@@ -279,6 +658,22 @@ jobs:
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: migration-s3-sigv4
+            display_name: "S3 SigV4 migration and rollback"
+            include_admin: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+            s3_migration: true
+            migration_from:
+              repository: RCOSDP/RDM-osf.io
+              commit: ddcc3505f8e9f4726236c280f2e1efd32cf352c3
+              osf_image: niicloudoperation/rdm-osf.io:latest
+              ember_image: niicloudoperation/rdm-ember-osf-web:latest
+              cas_image: niicloudoperation/rdm-cas-overlay:latest
+              mfr_image: niicloudoperation/rdm-modular-file-renderer:latest
+              wb_image: s3-migration-waterbutler:legacy
+              wb_commit: 004f407fefb071f1dc924d09f99916b1d5ea3561
           - name: migration-from-20250906-weko
             display_name: "Migration Test from 20250906 (WEKO)"
             include_admin: true
@@ -328,6 +723,56 @@ jobs:
             institutional_admin_authorization_enabled: false
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: user-s3-minio
+            display_name: "User Tests (Amazon S3 via MinIO)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            member_display_enabled: false
+          - name: user-s3-minio-regional
+            display_name: "User Tests (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            minio_region: ap-northeast-1
+            member_display_enabled: false
+          - name: admin-s3-minio
+            display_name: "Institutional Storage (Amazon S3 via MinIO)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+          - name: admin-s3-minio-regional
+            display_name: "Institutional Storage (Amazon S3 via MinIO, ap-northeast-1)"
+            include_admin: true
+            skip_admin: true
+            skip_metadata: true
+            skip_autofill: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: true
+            s3_minio_enabled: true
+            s3_minio_institutional: true
+            minio_region: ap-northeast-1
           - name: admin-minio
             display_name: "Admin Tests (MinIO)"
             include_admin: true
@@ -525,12 +970,31 @@ jobs:
             institutional_admin_authorization_enabled: true
             member_display_enabled: false
             mapcore_group_enabled: false
+          - name: user-binderhub-oauth
+            display_name: "User Tests (BinderHub OAuth)"
+            include_admin: false
+            skip_admin: true
+            skip_metadata: true
+            skip_default_storage: true
+            skip_login: true
+            skip_130mb_upload: true
+            minio_enabled: false
+            weko_enabled: false
+            jupyterhub_enabled: false
+            binderhub_enabled: true
+            flowable_enabled: false
     name: E2E ${{ matrix.test-group.display_name }}
     env:
+      SHIBBOLETH_ENABLED: ${{ matrix.test-group.shibboleth_enabled == true && 'true' || 'false' }}
+      SHIBBOLETH_ROLE: ${{ matrix.test-group.shibboleth_role }}
       MINIO_ENABLED: ${{ matrix.test-group.minio_enabled == true && 'true' || 'false' }}
+      S3_MINIO_ENABLED: ${{ matrix.test-group.s3_minio_enabled == true && 'true' || 'false' }}
+      S3_MINIO_INST_ENABLED: ${{ matrix.test-group.s3_minio_institutional == true && 'true' || 'false' }}
+      S3_MIGRATION_ENABLED: ${{ matrix.test-group.s3_migration == true && 'true' || 'false' }}
       S3COMPATSIGV4_ENABLED: ${{ matrix.test-group.s3compatsigv4_enabled == true && 'true' || 'false' }}
       S3COMPATSIGV4_INST_ENABLED: ${{ matrix.test-group.s3compatsigv4_institutional_storage == true && 'true' || 'false' }}
       WEKO_ENABLED: ${{ matrix.test-group.weko_enabled == true && 'true' || 'false' }}
+      BINDERHUB_ENABLED: ${{ matrix.test-group.binderhub_enabled == true && 'true' || 'false' }}
       JUPYTERHUB_ENABLED: ${{ matrix.test-group.jupyterhub_enabled == true && 'true' || 'false' }}
       FLOWABLE_ENABLED: ${{ matrix.test-group.flowable_enabled == true && 'true' || 'false' }}
       MIBYO_DB_ENABLED: ${{ matrix.test-group.mibyo_db_enabled == true && 'true' || 'false' }}
@@ -541,7 +1005,7 @@ jobs:
       MINIO_ROOT_PASSWORD: e2epassword123
       MINIO_ALIAS: ci-minio
       MINIO_ENDPOINT: http://minio:9000
-      MINIO_REGION: us-east-1
+      MINIO_REGION: ${{ matrix.test-group.minio_region || 'us-east-1' }}
       MINIO_SERVICE_NAME: MinIO (CI)
 
     steps:
@@ -550,98 +1014,11 @@ jobs:
       with:
         path: e2e-tests
 
-    - name: Determine RDM repository and branch
-      id: rdm_config
-      run: |
-        BASE_REPO="RCOSDP/RDM-osf.io"
-        BASE_BRANCH="develop"
-        CUSTOM_REPO=""
-        CUSTOM_BRANCH=""
-        MERGE_REQUIRED="false"
-        MERGE_FLAG="true"
-        TARGET_REPO="$BASE_REPO"
-        TARGET_BRANCH="$BASE_BRANCH"
-
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          # Extract from PR body (using file to avoid shell injection)
-          cat > /tmp/pr_body.txt << 'EOF'
-        ${{ github.event.pull_request.body }}
-        EOF
-          RDM_REPO=$(grep -oP '^-\s*RDM_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
-          RDM_BRANCH=$(grep -oP '^-\s*RDM_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
-          RDM_MERGE=$(grep -oP '^-\s*RDM_MERGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' | tr '[:upper:]' '[:lower:]' || true)
-
-          if [[ -n "$RDM_MERGE" ]]; then
-            case "$RDM_MERGE" in
-              false|no|off)
-                MERGE_FLAG="false"
-                ;;
-              true|yes|on)
-                MERGE_FLAG="true"
-                ;;
-            esac
-          fi
-
-          if [[ -n "$RDM_REPO" || -n "$RDM_BRANCH" ]]; then
-            CUSTOM_REPO="${RDM_REPO:-$BASE_REPO}"
-            CUSTOM_BRANCH="${RDM_BRANCH:-$BASE_BRANCH}"
-          fi
-        else
-          # Use workflow inputs or defaults
-          INPUT_REPO="${{ github.event.inputs.rdm_repository || '' }}"
-          INPUT_BRANCH="${{ github.event.inputs.rdm_branch || '' }}"
-          INPUT_MERGE="${{ github.event.inputs.merge_custom_rdm || '' }}"
-
-          if [[ -n "$INPUT_MERGE" ]]; then
-            INPUT_MERGE=$(echo "$INPUT_MERGE" | tr '[:upper:]' '[:lower:]')
-            case "$INPUT_MERGE" in
-              false|no|off)
-                MERGE_FLAG="false"
-                ;;
-              true|yes|on)
-                MERGE_FLAG="true"
-                ;;
-            esac
-          fi
-
-          if [[ -n "$INPUT_REPO" || -n "$INPUT_BRANCH" ]]; then
-            CUSTOM_REPO="${INPUT_REPO:-$BASE_REPO}"
-            CUSTOM_BRANCH="${INPUT_BRANCH:-$BASE_BRANCH}"
-          fi
-        fi
-
-        if [[ -n "$CUSTOM_REPO" || -n "$CUSTOM_BRANCH" ]]; then
-          CUSTOM_REPO="${CUSTOM_REPO:-$BASE_REPO}"
-          CUSTOM_BRANCH="${CUSTOM_BRANCH:-$BASE_BRANCH}"
-
-          if [[ "$MERGE_FLAG" == "true" ]]; then
-            MERGE_REQUIRED="true"
-          else
-            TARGET_REPO="$CUSTOM_REPO"
-            TARGET_BRANCH="$CUSTOM_BRANCH"
-          fi
-        fi
-
-        echo "Base RDM repository: $BASE_REPO @ $BASE_BRANCH"
-        if [[ "$MERGE_REQUIRED" == "true" ]]; then
-          echo "Merging custom RDM source: $CUSTOM_REPO @ $CUSTOM_BRANCH"
-        elif [[ -n "$CUSTOM_REPO" || -n "$CUSTOM_BRANCH" ]]; then
-          echo "Using custom RDM source without merge: $CUSTOM_REPO @ $CUSTOM_BRANCH"
-        fi
-        echo "Checkout target: $TARGET_REPO @ $TARGET_BRANCH"
-
-        echo "repository=$TARGET_REPO" >> $GITHUB_OUTPUT
-        echo "branch=$TARGET_BRANCH" >> $GITHUB_OUTPUT
-        echo "custom_repository=$CUSTOM_REPO" >> $GITHUB_OUTPUT
-        echo "custom_branch=$CUSTOM_BRANCH" >> $GITHUB_OUTPUT
-        echo "merge_required=$MERGE_REQUIRED" >> $GITHUB_OUTPUT
-        echo "merge_flag=$MERGE_FLAG" >> $GITHUB_OUTPUT
-
     - name: Checkout RDM-osf.io
       uses: actions/checkout@v4
       with:
-        repository: ${{ steps.rdm_config.outputs.repository }}
-        ref: ${{ steps.rdm_config.outputs.branch }}
+        repository: ${{ needs.build-images.outputs.rdm_repository }}
+        ref: ${{ needs.build-images.outputs.rdm_base_sha }}
         path: RDM-osf.io
         fetch-depth: 0
 
@@ -671,65 +1048,6 @@ jobs:
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_flowable.sh prepare ../RDM-flowable-gateway ../RDM-osf.io
-
-    - name: Merge custom RDM changes into develop
-      if: steps.rdm_config.outputs.merge_required == 'true'
-      working-directory: RDM-osf.io
-      run: |
-        CUSTOM_REPO="${{ steps.rdm_config.outputs.custom_repository }}"
-        CUSTOM_BRANCH="${{ steps.rdm_config.outputs.custom_branch }}"
-        BASE_REPO="${{ steps.rdm_config.outputs.repository }}"
-
-        # Ensure committer identity is available before running merge commands
-        git config user.name "github-actions[bot]"
-        git config user.email "RDM-e2e-test-nb@example.com"
-
-        if [[ "$CUSTOM_REPO" == "$BASE_REPO" ]]; then
-          echo "Fetching branch $CUSTOM_BRANCH from origin"
-          git fetch origin "$CUSTOM_BRANCH"
-          git merge --no-ff --no-commit "origin/$CUSTOM_BRANCH"
-        else
-          echo "Fetching branch $CUSTOM_BRANCH from $CUSTOM_REPO"
-          if git remote get-url custom >/dev/null 2>&1; then
-            git remote set-url custom "https://github.com/${CUSTOM_REPO}.git"
-          else
-            git remote add custom "https://github.com/${CUSTOM_REPO}.git"
-          fi
-          git fetch custom "$CUSTOM_BRANCH"
-          git merge --no-ff --no-commit FETCH_HEAD
-        fi
-
-        if git status --short | grep '^UU' >/dev/null; then
-          echo "Merge conflicts detected; aborting."
-          exit 1
-        fi
-
-        if git diff --quiet --cached; then
-          echo "No custom changes to merge; repository already up to date."
-        else
-          git commit --no-verify -m "Temporary merge of ${CUSTOM_REPO}@${CUSTOM_BRANCH} for E2E tests"
-        fi
-
-    - name: Create local reference for merged target
-      working-directory: RDM-osf.io
-      run: |
-        git branch --force e2e-target HEAD
-        
-    - name: Setup migration source (migration mode)
-      if: matrix.test-group.migration_from != null
-      working-directory: RDM-osf.io
-      run: |
-        # Fetch origin to ensure we have the target version
-        git fetch origin
-        
-        # Add migration source repository as remote if different
-        if [ "${{ matrix.test-group.migration_from.repository }}" != "${{ steps.rdm_config.outputs.repository }}" ]; then
-          git remote add migration-source https://github.com/${{ matrix.test-group.migration_from.repository }}.git
-          git fetch migration-source
-        fi
-        
-        # Checkout the migration source commit
-        git checkout ${{ matrix.test-group.migration_from.commit }}
 
     - name: Configure Docker to use /mnt
       run: |
@@ -762,8 +1080,26 @@ jobs:
         name: prebuilt-images
         path: prebuilt-images
 
-    - name: Load prebuilt images
+    - name: Restore shared RDM target
+      working-directory: RDM-osf.io
+      env:
+        RDM_BASE_SHA: ${{ needs.build-images.outputs.rdm_base_sha }}
+        RDM_TARGET_SHA: ${{ needs.build-images.outputs.rdm_target_sha }}
       run: |
+        if [[ "$RDM_TARGET_SHA" != "$RDM_BASE_SHA" ]]; then
+          git fetch "$GITHUB_WORKSPACE/prebuilt-images/rdm-target.bundle" refs/heads/e2e-target
+        fi
+        git checkout -B e2e-target "$RDM_TARGET_SHA"
+
+    - name: Load prebuilt images
+      env:
+        TARGET_OSF_IMAGE: ${{ needs.build-images.outputs.osf_image }}
+        TARGET_OSF_IMAGE_ID: ${{ needs.build-images.outputs.osf_image_id }}
+      run: |
+        docker image load -i prebuilt-images/rdm-osf-wiki.tar.gz
+        test "$(docker image inspect --format '{{.Id}}' "$TARGET_OSF_IMAGE")" = "$TARGET_OSF_IMAGE_ID"
+        echo "Shared OSF image: $TARGET_OSF_IMAGE_ID"
+        mv prebuilt-images/wiki wiki-bundle
         docker load -i prebuilt-images/elasticsearch-kuromoji.tar
         echo "ELASTICSEARCH_IMAGE=elasticsearch-kuromoji:amd64" >> "$GITHUB_ENV"
 
@@ -777,7 +1113,31 @@ jobs:
           docker load -i prebuilt-images/rdm-waterbutler-custom.tar
           echo "WB_IMAGE=rdm-waterbutler:custom" >> "$GITHUB_ENV"
         fi
+
+        if [ "${BINDERHUB_ENABLED}" = "true" ] && [ "${{ needs.build-images.outputs.binderhub_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/binderhub-custom.tar
+          echo "BINDERHUB_CUSTOM_IMAGE=binderhub:custom" >> "$GITHUB_ENV"
+        fi
+        if [ "${BINDERHUB_ENABLED}" = "true" ] && [ "${{ needs.build-images.outputs.binderhub_jupyterhub_custom }}" = "true" ]; then
+          docker load -i prebuilt-images/binderhub-jupyterhub-custom.tar
+          echo "BINDERHUB_CUSTOM_JUPYTERHUB_IMAGE=binderhub-jupyterhub:custom" >> "$GITHUB_ENV"
+        fi
         rm -rf prebuilt-images
+
+    - name: Download Shibboleth authentication images
+      if: env.SHIBBOLETH_ENABLED == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: shibboleth-images
+        path: shibboleth-images
+
+    - name: Load Shibboleth authentication images
+      if: env.SHIBBOLETH_ENABLED == 'true'
+      run: |
+        docker load -i shibboleth-images/authentication.tar
+        mkdir -p e2e-tests/result
+        mv shibboleth-images/revisions.txt e2e-tests/result/authentication-revisions.txt
+        rm -r shibboleth-images
 
     - name: Install Docker Compose
       run: |
@@ -789,6 +1149,22 @@ jobs:
       run: |
         # Add loopback alias for Ubuntu as per README-docker-compose.md
         sudo ifconfig lo:0 192.168.168.167 netmask 255.255.255.255 up
+
+    - name: Setup migration source (migration mode)
+      if: matrix.test-group.migration_from != null
+      working-directory: RDM-osf.io
+      run: |
+        # Fetch origin to ensure we have the target version
+        git fetch origin
+
+        # Add migration source repository as remote if different
+        if [ "${{ matrix.test-group.migration_from.repository }}" != "${{ needs.build-images.outputs.rdm_repository }}" ]; then
+          git remote add migration-source https://github.com/${{ matrix.test-group.migration_from.repository }}.git
+          git fetch migration-source
+        fi
+
+        # Checkout the migration source commit
+        git checkout ${{ matrix.test-group.migration_from.commit }}
 
     - name: Setup initial environment for migration
       if: matrix.test-group.migration_from != null
@@ -806,6 +1182,12 @@ jobs:
         export CAS_IMAGE="${{ matrix.test-group.migration_from.cas_image }}"
         export MFR_IMAGE="${{ matrix.test-group.migration_from.mfr_image }}"
         export WB_IMAGE="${{ matrix.test-group.migration_from.wb_image }}"
+        if [ "${S3_MIGRATION_ENABLED}" = "true" ]; then
+          git init "$RUNNER_TEMP/waterbutler-legacy"
+          git -C "$RUNNER_TEMP/waterbutler-legacy" fetch --depth=1 https://github.com/RCOSDP/RDM-waterbutler.git "${{ matrix.test-group.migration_from.wb_commit }}"
+          git -C "$RUNNER_TEMP/waterbutler-legacy" checkout --detach FETCH_HEAD
+          docker build -t "$WB_IMAGE" "$RUNNER_TEMP/waterbutler-legacy"
+        fi
         create_docker_override
         
         # Install requirements
@@ -830,6 +1212,16 @@ jobs:
         # Test endpoints
         test_rdm_endpoints
 
+    - name: Initialize S3 storage for migration
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        scripts="${{ github.workspace }}/e2e-tests/.github/scripts"
+        "$scripts/setup_minio_buckets.sh" . "$MINIO_ALIAS" "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" \
+          s3migrationa s3-fixture-secret-a s3-e2e-a s3migrationb s3-fixture-secret-b s3-e2e-b
+        bash "$scripts/setup_s3_minio.sh" prepare "$PWD"
+        S3_MIGRATION_LEGACY=true bash "$scripts/setup_s3_minio.sh" install "$PWD"
+
     - name: Set up Python for E2E tests
       uses: actions/setup-python@v4
       with:
@@ -844,6 +1236,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
         pip install --no-cache-dir papermill
+        if [ "${S3_MINIO_ENABLED}" = "true" ] && [ "${S3_MINIO_INST_ENABLED}" != "true" ] && [ "${S3_MIGRATION_ENABLED}" != "true" ]; then
+          pip install --no-cache-dir boto3
+        fi
         
         # Clear pip cache if any remains
         pip cache purge || true
@@ -915,11 +1310,39 @@ jobs:
         
         echo "Migration-specific initial data notebook executed"
 
+    - name: Run S3 migration source notebook
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-before
+        papermill テスト手順-S3移行前.ipynb ../result/s3-before/テスト手順-S3移行前.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p s3_access_key s3migrationa -p s3_secret_key s3-fixture-secret-a -p s3_bucket s3-e2e-a \
+          -p default_result_path ../result/s3-before -p close_on_fail True
+
+    - name: Configure institutional S3 on the migration source
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        mkdir -p result/s3-before/institutional
+        papermill 取りまとめ-機関ストレージ.ipynb result/s3-before/institutional/取りまとめ-機関ストレージ.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p admin_rdm_url http://192.168.168.167:8001/ \
+          -p idp_name_1 FakeCAS -p idp_username_1 teststaff@example.com -p idp_password_1 testpass789 \
+          -p member_idp_username testuser2@example.com -p member_idp_password testpass456 \
+          -p storage_provider s3 -p institutional_storage_name 'Institutional S3 Migration Storage' \
+          -p s3_access_key s3migrationb -p s3_secret_key s3-fixture-secret-b -p s3_bucket s3-e2e-b \
+          -p rdm_project_prefix TEST-Institutional-S3-Migration -p prepare_migration True \
+          -p default_result_path result/s3-before/institutional -p close_on_fail True
+
     - name: Stop migration source environment
       if: matrix.test-group.migration_from != null
       working-directory: RDM-osf.io
       run: |
         echo "Stopping migration source environment..."
+        if [ "${S3_MIGRATION_ENABLED}" = "true" ]; then
+          docker-compose logs --no-color --no-log-prefix s3-minio-proxy > ../e2e-tests/result/s3-before/s3-minio-proxy.log
+        fi
         docker-compose down
         echo "Migration source environment stopped"
 
@@ -934,6 +1357,10 @@ jobs:
         
         echo "Switched to target version: e2e-target"
 
+    - name: Install shared Wiki bundle in the mounted RDM checkout
+      working-directory: RDM-osf.io
+      run: cp -r "$GITHUB_WORKSPACE/wiki-bundle/." website/static/js/pages/
+
     - name: Create required configuration files for RDM
       working-directory: RDM-osf.io
       run: |
@@ -943,97 +1370,30 @@ jobs:
         export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
         setup_config_files
 
+    - name: Prepare OAuth BinderHub settings
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh prepare ../RDM-osf.io
+
     - name: Parse PR body and workflow parameters
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
       run: |
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          cat > /tmp/pr_body.txt << 'EOF'
-        ${{ github.event.pull_request.body }}
-        EOF
-          # Wiki parameters from PR body
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
           WIKI_ENABLED_OVERRIDE=$(grep -oP '^-\s*WIKI_ENABLED:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' | tr '[:upper:]' '[:lower:]' || true)
-          WIKI_REPO_OVERRIDE=$(grep -oP '^-\s*WIKI_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
-          WIKI_BRANCH_OVERRIDE=$(grep -oP '^-\s*WIKI_BRANCH:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
-          echo "WIKI_CUSTOM_REPO=${WIKI_REPO_OVERRIDE}" >> $GITHUB_ENV
-          echo "WIKI_CUSTOM_BRANCH=${WIKI_BRANCH_OVERRIDE}" >> $GITHUB_ENV
           if [[ "$WIKI_ENABLED_OVERRIDE" == "true" ]]; then
             echo "WIKI_ENABLED=true" >> $GITHUB_ENV
           fi
 
-          # y-websocket parameters from PR body
-          Y_WEBSOCKET_REPO_OVERRIDE=$(grep -oP '^-\s*Y_WEBSOCKET_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt \
-            | head -1 | tr -d ' \r' || true)
-          Y_WEBSOCKET_BRANCH_OVERRIDE=$(grep -oP '^-\s*Y_WEBSOCKET_BRANCH:\s*\K.*$' /tmp/pr_body.txt \
-            | head -1 | tr -d ' \r' || true)
-          echo "Y_WEBSOCKET_CUSTOM_REPO=${Y_WEBSOCKET_REPO_OVERRIDE}" >> $GITHUB_ENV
-          echo "Y_WEBSOCKET_CUSTOM_BRANCH=${Y_WEBSOCKET_BRANCH_OVERRIDE}" >> $GITHUB_ENV
-        else
-          echo "WIKI_CUSTOM_REPO=${{ github.event.inputs.wiki_repository }}" >> $GITHUB_ENV
-          echo "WIKI_CUSTOM_BRANCH=${{ github.event.inputs.wiki_branch }}" >> $GITHUB_ENV
-          echo "Y_WEBSOCKET_CUSTOM_REPO=${{ github.event.inputs.y_websocket_repository }}" >> $GITHUB_ENV
-          echo "Y_WEBSOCKET_CUSTOM_BRANCH=${{ github.event.inputs.y_websocket_branch }}" >> $GITHUB_ENV
         fi
-
-    - name: Build Wiki bundle and OSF image
-      if: env.WIKI_ENABLED == 'true'
-      run: |
-        WIKI_REPO="${WIKI_CUSTOM_REPO:-RCOSDP/RDM-wiki-frontend}"
-        WIKI_BRANCH="${WIKI_CUSTOM_BRANCH:-develop}"
-        BUILD_TAG="${{ github.run_number }}"
-
-        echo "=== Building Wiki bundle from ${WIKI_REPO}@${WIKI_BRANCH} ==="
-
-        # Stage 1: Clone RDM-wiki-frontend (wiki-webpack)
-        git clone --depth=50 -b "${WIKI_BRANCH}" \
-          "https://github.com/${WIKI_REPO}.git" RDM-wiki-frontend
-
-        # Stage 2: Prepare wiki-osf (copy of RDM-osf.io + wiki-frontend merged)
-        cp -r RDM-osf.io wiki-osf
-        cp -r RDM-wiki-frontend/. wiki-osf/
-
-        # Build wiki bundle docker image (webpack runs inside container)
-        echo "Building wiki bundle image..."
-        docker build --pull -t "rdm/wiki:${BUILD_TAG}" wiki-osf/
-
-        # Extract webpack bundle from container
-        mkdir -p wikitemp
-        CONTAINER_ID=$(docker create --name "wiki-extract-${BUILD_TAG}" "rdm/wiki:${BUILD_TAG}" bash)
-        docker cp "${CONTAINER_ID}:/code/website/static/public/js/" wikitemp/
-        docker rm "${CONTAINER_ID}" || true
-        docker rmi "rdm/wiki:${BUILD_TAG}" || true
-
-        # Cleanup intermediate dirs to save disk space
-        rm -rf wiki-osf RDM-wiki-frontend
-
-        # Stage 3: Copy wiki-edit-page bundle into RDM-osf.io
-        JS_FILE=$(ls -rt wikitemp/js/wiki-edit-page.*.js 2>/dev/null | tail -n 1)
-        MAP_FILE=$(ls -rt wikitemp/js/wiki-edit-page.*.js.map 2>/dev/null | tail -n 1 || true)
-
-        if [ -z "${JS_FILE}" ]; then
-          echo "ERROR: wiki-edit-page.js not found in wiki container output"
-          ls -la wikitemp/js/ || true
-          exit 1
-        fi
-
-        echo "Copying wiki bundle: ${JS_FILE}"
-        cp "${JS_FILE}" RDM-osf.io/website/static/js/pages/wiki-edit-page.js
-        if [ -n "${MAP_FILE}" ]; then
-          cp "${MAP_FILE}" RDM-osf.io/website/static/js/pages/
-        fi
-        rm -rf wikitemp
-
-        # Build final OSF image with wiki bundle included
-        echo "Building OSF image with wiki bundle..."
-        OSF_WIKI_TAG="rdm-osf-wiki:${BUILD_TAG}"
-        docker build -t "${OSF_WIKI_TAG}" RDM-osf.io/
-
-        echo "OSF_IMAGE=${OSF_WIKI_TAG}" >> $GITHUB_ENV
-        echo "=== Wiki build complete. OSF_IMAGE set to: ${OSF_WIKI_TAG} ==="
 
     - name: Build and start y-websocket
       if: env.WIKI_ENABLED == 'true'
+      env:
+        Y_WS_REPO: ${{ needs.build-images.outputs.y_websocket_repository }}
+        Y_WS_BRANCH: ${{ needs.build-images.outputs.y_websocket_branch }}
       run: |
-        Y_WS_REPO="${Y_WEBSOCKET_CUSTOM_REPO:-RCOSDP/RDM-y-websocket}"
-        Y_WS_BRANCH="${Y_WEBSOCKET_CUSTOM_BRANCH:-master}"
         git clone --depth=50 -b "${Y_WS_BRANCH}" "https://github.com/${Y_WS_REPO}.git" RDM-y-websocket
         docker build --pull -t rdm/y-websocket:local RDM-y-websocket
         docker compose -f e2e-tests/docker/y-websocket/docker-compose.yml up -d
@@ -1056,15 +1416,13 @@ jobs:
 
     - name: Create docker-compose override for NII Cloud Operation images
       working-directory: RDM-osf.io
+      env:
+        OSF_IMAGE: ${{ needs.build-images.outputs.osf_image }}
+        PR_BODY: ${{ github.event.pull_request.body }}
       run: |
         # Check for image override in PR body or use workflow inputs
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          # Extract image overrides from PR description if present
-          # Format: - OSF_IMAGE: yacchin1205/rdm2-osf.io:feature_ror-v2
-          cat > /tmp/pr_body.txt << 'EOF'
-        ${{ github.event.pull_request.body }}
-        EOF
-          OSF_OVERRIDE=$(grep -oP '^-\s*OSF_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' ' || true)
+          printf '%s\n' "$PR_BODY" > /tmp/pr_body.txt
           EMBER_OVERRIDE=$(grep -oP '^-\s*EMBER_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' ' || true)
           CAS_OVERRIDE=$(grep -oP '^-\s*CAS_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' ' || true)
           MFR_OVERRIDE=$(grep -oP '^-\s*MFR_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' ' || true)
@@ -1076,6 +1434,8 @@ jobs:
           TLJH_PLUGIN_OVERRIDE=$(grep -oP '^-\s*TLJH_PLUGIN:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
           TLJH_REPO2DOCKER_IMAGE_OVERRIDE=$(grep -oP '^-\s*TLJH_REPO2DOCKER_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
           TLJH_RDMFS_IMAGE_OVERRIDE=$(grep -oP '^-\s*TLJH_RDMFS_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          BINDERHUB_IMAGE_OVERRIDE=$(grep -oP '^-\s*BINDERHUB_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
+          BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE=$(grep -oP '^-\s*BINDERHUB_JUPYTERHUB_IMAGE:\s*\K.*$' /tmp/pr_body.txt | head -1 | tr -d ' \r' || true)
 
           # Export for use in later steps
           echo "EXCLUDE_NOTEBOOKS=$EXCLUDE_NOTEBOOKS_OVERRIDE" >> $GITHUB_ENV
@@ -1083,14 +1443,9 @@ jobs:
           echo "TLJH_PLUGIN_OVERRIDE=$TLJH_PLUGIN_OVERRIDE" >> $GITHUB_ENV
           echo "TLJH_REPO2DOCKER_IMAGE_OVERRIDE=$TLJH_REPO2DOCKER_IMAGE_OVERRIDE" >> $GITHUB_ENV
           echo "TLJH_RDMFS_IMAGE_OVERRIDE=$TLJH_RDMFS_IMAGE_OVERRIDE" >> $GITHUB_ENV
+          echo "BINDERHUB_IMAGE_OVERRIDE=$BINDERHUB_IMAGE_OVERRIDE" >> $GITHUB_ENV
+          echo "BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE=$BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE" >> $GITHUB_ENV
 
-          # Use overrides if found, otherwise defaults
-          # If WIKI_ENABLED, OSF_IMAGE was already set to the wiki-built image; preserve it
-          if [[ "${WIKI_ENABLED}" == "true" && -n "${OSF_IMAGE}" ]]; then
-            export OSF_IMAGE
-          else
-            export OSF_IMAGE="${OSF_OVERRIDE:-niicloudoperation/rdm-osf.io:latest}"
-          fi
           export EMBER_IMAGE="${EMBER_OVERRIDE:-niicloudoperation/rdm-ember-osf-web:latest}"
           export CAS_IMAGE="${CAS_OVERRIDE:-niicloudoperation/rdm-cas-overlay:latest}"
           export MFR_IMAGE="${MFR_OVERRIDE:-niicloudoperation/rdm-modular-file-renderer:latest}"
@@ -1100,13 +1455,6 @@ jobs:
             export WB_IMAGE="${WB_OVERRIDE:-niicloudoperation/rdm-waterbutler:latest}"
           fi
         else
-          # Use workflow dispatch inputs or defaults
-          # If WIKI_ENABLED, OSF_IMAGE was already set to the wiki-built image; preserve it
-          if [[ "${WIKI_ENABLED}" == "true" && -n "${OSF_IMAGE}" ]]; then
-            export OSF_IMAGE
-          else
-            export OSF_IMAGE="${{ github.event.inputs.osf_image || 'niicloudoperation/rdm-osf.io:latest' }}"
-          fi
           export EMBER_IMAGE="${{ github.event.inputs.ember_image || 'niicloudoperation/rdm-ember-osf-web:latest' }}"
           export CAS_IMAGE="${{ github.event.inputs.cas_image || 'niicloudoperation/rdm-cas-overlay:latest' }}"
           export MFR_IMAGE="${{ github.event.inputs.mfr_image || 'niicloudoperation/rdm-modular-file-renderer:latest' }}"
@@ -1119,6 +1467,16 @@ jobs:
 
         source ${{ github.workspace }}/e2e-tests/.github/scripts/setup_rdm.sh
         create_docker_override
+        if [ "${S3_MINIO_ENABLED}" = "true" ] && [ "${S3_MIGRATION_ENABLED}" != "true" ]; then
+          bash "${{ github.workspace }}/e2e-tests/.github/scripts/setup_s3_minio.sh" prepare "${PWD}"
+        fi
+
+    - name: Configure Shibboleth authentication
+      if: env.SHIBBOLETH_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      env:
+        SHIBBOLETH_CAS_IMAGE: ${{ needs.build-images.outputs.shibboleth_cas_image }}
+      run: python3 ../e2e-tests/.github/scripts/setup_shibboleth.py configure . --cas-image "$SHIBBOLETH_CAS_IMAGE"
 
     - name: Install RDM requirements
       working-directory: RDM-osf.io
@@ -1176,7 +1534,7 @@ jobs:
         rm "$JSON_FILE"
 
     - name: Initialize MinIO for S3 compatibility tests
-      if: env.MINIO_ENABLED == 'true'
+      if: env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         set -eu
@@ -1195,6 +1553,9 @@ jobs:
         SECRET_KEY_2="$(secret_part)"
 
         BUCKET_PREFIX="ci-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-0}"
+        if [ "${S3_MINIO_ENABLED}" = "true" ]; then
+          BUCKET_PREFIX="s3-e2e"
+        fi
         BUCKET_NAME_1="${BUCKET_PREFIX}-a"
         BUCKET_NAME_2="${BUCKET_PREFIX}-b"
 
@@ -1218,6 +1579,11 @@ jobs:
         echo "S3COMPAT_REGION=${MINIO_REGION}" >> $GITHUB_ENV
         echo "S3COMPAT_ENDPOINT=${MINIO_ENDPOINT}" >> $GITHUB_ENV
         echo "S3COMPAT_SERVICE_NAME=${MINIO_SERVICE_NAME}" >> $GITHUB_ENV
+
+    - name: Route Amazon S3 requests to MinIO
+      if: env.S3_MINIO_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: bash "${{ github.workspace }}/e2e-tests/.github/scripts/setup_s3_minio.sh" install "${PWD}"
 
     - name: Initialize MinIO for S3CompatSigV4 tests
       if: env.MINIO_ENABLED == 'true' && (env.S3COMPATSIGV4_ENABLED == 'true' || env.S3COMPATSIGV4_INST_ENABLED == 'true')
@@ -1286,7 +1652,7 @@ jobs:
         fi
 
     - name: Start MinIO trace
-      if: env.MINIO_ENABLED == 'true'
+      if: env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1349,6 +1715,14 @@ jobs:
         echo "GATEWAY_BASE_URL=http://192.168.168.167:8088/" >> $GITHUB_ENV
         echo "WORKFLOW_BATCH_PROJECT_COUNT=${{ matrix.test-group.workflow_batch_project_count || 50 }}" >> $GITHUB_ENV
         echo "WORKFLOW_TEST_MODE=${{ matrix.test-group.workflow_test_mode }}" >> $GITHUB_ENV
+
+    - name: Install OAuth BinderHub stack
+      if: env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      env:
+        BINDERHUB_IMAGE: ${{ env.BINDERHUB_CUSTOM_IMAGE || env.BINDERHUB_IMAGE_OVERRIDE || github.event.inputs.binderhub_image || env.BINDERHUB_DEFAULT_IMAGE }}
+        JUPYTERHUB_IMAGE: ${{ env.BINDERHUB_CUSTOM_JUPYTERHUB_IMAGE || env.BINDERHUB_JUPYTERHUB_IMAGE_OVERRIDE || github.event.inputs.binderhub_jupyterhub_image || env.BINDERHUB_DEFAULT_JUPYTERHUB_IMAGE }}
+      run: .github/scripts/setup_binderhub.sh install
 
     - name: Install TLJH stack
       if: env.JUPYTERHUB_ENABLED == 'true'
@@ -1416,7 +1790,7 @@ jobs:
         docker cp ${{ github.workspace }}/e2e-tests/.github/scripts/setup_test_data.py "$(docker-compose ps -q web)":/tmp/setup_test_data.py
 
         # Execute the script and capture project IDs
-        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" -e INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED="${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
+        docker-compose exec -T -e WIKI_ENABLED="${WIKI_ENABLED}" -e MAPCORE_GROUP_ENABLED="${MAPCORE_GROUP_ENABLED}" -e INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED="${INSTITUTIONAL_ADMIN_AUTHORIZATION_ENABLED}" -e SHIBBOLETH_ENABLED="${SHIBBOLETH_ENABLED}" web bash -c "python3 manage.py shell < /tmp/setup_test_data.py" | tee /tmp/setup_output.txt
         
         # Extract project IDs and names from output
         PROJECT_ID_1=$(grep "PROJECT_ID_testuser1@example.com:" /tmp/setup_output.txt | cut -d' ' -f2)
@@ -1463,7 +1837,95 @@ jobs:
         docker-compose exec -T web python3 -m scripts.register_erad_metadata /tmp/erad_sample.csv
         echo "e-Rad data registered successfully"
 
+    - name: Verify S3 data after upgrading
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-after
+        papermill テスト手順-S3移行後.ipynb ../result/s3-after/テスト手順-S3移行後.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after -p close_on_fail True
+
+    - name: Verify institutional S3 data after upgrading
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-after/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-after/institutional/テスト手順-S3移行後.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' -p target_file_name test_institutional_storage.txt \
+          -p target_file_content 'S3 institutional storage migration fixture' \
+          -p new_file_name after-upgrade.txt -p default_result_path ../result/s3-after/institutional -p close_on_fail True
+
+    - name: Verify upgraded S3 requests use SigV4
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        log=../e2e-tests/result/s3-after/s3-minio-proxy.log
+        docker-compose logs --no-color --no-log-prefix s3-minio-proxy > "$log"
+        for bucket in s3-e2e-a s3-e2e-b; do
+          if ! grep -Eq "^[^ ]+ (${bucket}\.[^ ]+ |[^ ]+ /${bucket}(/| ))[^[:cntrl:]]*signature=v4$" "$log"; then
+            echo "No Signature V4 request recorded for ${bucket}" >&2
+            exit 1
+          fi
+        done
+        if grep -q 'signature=v2$' "$log"; then
+          echo 'The upgraded version used Signature V2' >&2
+          exit 1
+        fi
+
+    - name: Restore the migration source version
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: |
+        docker-compose down
+        git checkout -f "${{ matrix.test-group.migration_from.commit }}"
+        export INCLUDE_ADMIN=${{ matrix.test-group.include_admin }}
+        export OSF_IMAGE="${{ matrix.test-group.migration_from.osf_image }}"
+        export EMBER_IMAGE="${{ matrix.test-group.migration_from.ember_image }}"
+        export CAS_IMAGE="${{ matrix.test-group.migration_from.cas_image }}"
+        export MFR_IMAGE="${{ matrix.test-group.migration_from.mfr_image }}"
+        export WB_IMAGE="${{ matrix.test-group.migration_from.wb_image }}"
+        scripts="${{ github.workspace }}/e2e-tests/.github/scripts"
+        source "$scripts/setup_rdm.sh"
+        setup_config_files
+        create_docker_override
+        install_requirements
+        compile_translations
+        start_asset_services
+        start_rdm_services
+        S3_MIGRATION_LEGACY=true bash "$scripts/setup_s3_minio.sh" install "$PWD"
+        test_rdm_endpoints
+
+    - name: Verify S3 data after rolling back
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-rollback
+        papermill テスト手順-S3移行後.ipynb ../result/s3-rollback/テスト手順-S3ロールバック.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser1@example.com -p idp_password_1 testpass123 \
+          -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
+          -p default_result_path ../result/s3-rollback -p close_on_fail True
+
+    - name: Verify institutional S3 data after rolling back
+      if: env.S3_MIGRATION_ENABLED == 'true'
+      working-directory: e2e-tests/migrations
+      run: |
+        mkdir -p ../result/s3-rollback/institutional
+        papermill テスト手順-S3移行後.ipynb ../result/s3-rollback/institutional/テスト手順-S3ロールバック.ipynb \
+          -p rdm_url http://192.168.168.167:5000/ -p idp_name_1 FakeCAS \
+          -p idp_username_1 testuser2@example.com -p idp_password_1 testpass456 \
+          -p rdm_project_name TEST-Institutional-S3-Migration-institutional \
+          -p target_storage_name 'Institutional S3 Migration Storage' \
+          -p target_file_name after-upgrade.txt -p target_file_content 'Created after S3 storage migration' \
+          -p default_result_path ../result/s3-rollback/institutional -p close_on_fail True
+
     - name: Prepare test configuration
+      if: env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         cat > base_ci.config.yaml <<'EOF'
@@ -1547,6 +2009,7 @@ jobs:
         member_display_enabled: ${{ matrix.test-group.member_display_enabled == true }}
         enable_1gb_file_upload: false
         skip_autofill: ${{ matrix.test-group.skip_autofill == true }}
+        skip_wiki_collaboration: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_wiki_collaboration }}
         institutional_admin_authorization_enabled: ${{ matrix.test-group.institutional_admin_authorization_enabled == true }}
         storages_oauth: []
         mapcore_group_enabled: ${{ matrix.test-group.mapcore_group_enabled == true }}
@@ -1564,7 +2027,13 @@ jobs:
         fi
 
         args=(ci.config.yaml base_ci.config.yaml)
-        if [ "${MINIO_ENABLED}" = "true" ]; then
+        if [ "${SHIBBOLETH_ENABLED}" = "true" ]; then
+          args+=(--shibboleth)
+        fi
+        if [ "${S3_MINIO_ENABLED}" = "true" ]; then
+          export S3_MINIO_CA_BUNDLE="${GITHUB_WORKSPACE}/RDM-osf.io/.s3-minio/server.crt"
+          args+=(--s3-minio)
+        elif [ "${MINIO_ENABLED}" = "true" ]; then
           args+=(--minio)
         fi
         if [ "${JUPYTERHUB_ENABLED}" = "true" ]; then
@@ -1582,10 +2051,13 @@ jobs:
         if [ "${S3COMPATSIGV4_INST_ENABLED}" = "true" ]; then
           args+=(--s3compatsigv4-inst)
         fi
-        if [ "${WIKI_ENABLED}" = "true" ]; then
+        if [ "${WIKI_ENABLED}" = "true" ] && [ "${SHIBBOLETH_ENABLED}" != "true" ]; then
           args+=(--wiki)
         fi
 
+        if [ "${BINDERHUB_ENABLED}" = "true" ]; then
+          args+=(--binderhub)
+        fi
         .github/scripts/generate_ci_config.sh "${args[@]}"
         rm base_ci.config.yaml
 
@@ -1619,6 +2091,7 @@ jobs:
         cat ci.config.yaml
 
     - name: Run E2E tests
+      if: env.S3_MIGRATION_ENABLED != 'true'
       working-directory: e2e-tests
       run: |
         # Create result directories
@@ -1693,8 +2166,35 @@ jobs:
         path: e2e-tests/result/
         retention-days: 7
 
+    - name: Collect Amazon S3 proxy log
+      if: always() && env.S3_MINIO_ENABLED == 'true'
+      working-directory: RDM-osf.io
+      run: docker-compose logs --no-color --no-log-prefix s3-minio-proxy > ../e2e-tests/s3-minio-proxy.log
+
+    - name: Verify Amazon S3 requests use SigV4
+      if: always() && env.S3_MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
+      run: |
+        python3 - <<'PYTHON'
+        from pathlib import Path
+        lines = Path('e2e-tests/s3-minio-proxy.log').read_text().splitlines()
+        assert any(line.endswith('signature=v4') for line in lines), 'No SigV4 requests reached MinIO'
+        assert not any(line.endswith('signature=v2') for line in lines), 'S3 requests used Signature V2'
+        PYTHON
+
+    - name: Verify multipart upload completion uses SigV4
+      if: always() && env.S3_MINIO_ENABLED == 'true' && env.S3_MINIO_INST_ENABLED != 'true' && env.S3_MIGRATION_ENABLED != 'true'
+      run: |
+        grep -E '^POST .+/multipart-check\.bin 200 operation=complete-multipart signature=v4$' e2e-tests/s3-minio-proxy.log
+
+    - name: Upload Amazon S3 proxy log
+      if: always() && env.S3_MINIO_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: s3-minio-proxy-${{ matrix.test-group.name }}
+        path: e2e-tests/s3-minio-proxy.log
+
     - name: Collect MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       working-directory: RDM-osf.io
       run: |
         set -eu
@@ -1704,7 +2204,7 @@ jobs:
         fi
 
     - name: Upload MinIO trace
-      if: always() && env.MINIO_ENABLED == 'true'
+      if: always() && env.MINIO_ENABLED == 'true' && env.S3_MIGRATION_ENABLED != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: minio-trace-${{ matrix.test-group.name }}
@@ -1723,6 +2223,24 @@ jobs:
       with:
         name: weko-logs-${{ matrix.test-group.name }}
         path: e2e-tests/weko-docker-logs.txt
+        retention-days: 7
+
+    - name: Collect OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: |
+        docker compose -f docker/binderhub/compose.yaml logs --no-color > binderhub-logs.txt 2>&1
+        for container in $(docker ps -a --filter name=rdm-e2e-binder- --format '{{.Names}}'); do
+          echo "Container: $container" >> binderhub-logs.txt
+          docker logs "$container" >> binderhub-logs.txt 2>&1
+        done
+
+    - name: Upload OAuth BinderHub logs
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: binderhub-logs-${{ matrix.test-group.name }}
+        path: e2e-tests/binderhub-logs.txt
         retention-days: 7
 
     - name: Collect TLJH logs
@@ -1771,6 +2289,11 @@ jobs:
       working-directory: e2e-tests
       run: |
         .github/scripts/setup_weko.sh down ../weko
+
+    - name: Stop OAuth BinderHub stack
+      if: always() && env.BINDERHUB_ENABLED == 'true'
+      working-directory: e2e-tests
+      run: .github/scripts/setup_binderhub.sh down
 
     - name: Stop TLJH stack
       if: always() && env.JUPYTERHUB_ENABLED == 'true'

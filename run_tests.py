@@ -49,6 +49,11 @@ class TestRunner:
         self.skip_login = False
         self.enable_1gb_file_upload = False
         self.skip_autofill = False
+        self.binderhub_enabled = False
+        self.binderhub_binderhub_url = None
+        self.binderhub_use_default_server = False
+        self.jupyterhub_username = None
+        self.jupyterhub_password = None
         self.jupyterhub_enabled = False
         self.tljh_url = None
         self.tljh_username = None
@@ -72,11 +77,13 @@ class TestRunner:
         # S3CompatSigV4 specific parameters
         self.s3compatsigv4_enabled = False
         self.s3compatsigv4_institutional_storage_enabled = False
+        self.s3_institutional_storage_enabled = False
         # Workflow specific parameters
         self.workflow_enabled = False
         self.gateway_base_url = None
         # Wiki specific parameters
         self.wiki_enabled = False
+        self.skip_wiki_collaboration = False
         # Institutional admin authorization test
         self.institutional_admin_authorization_enabled = False
         self.user_guid = None
@@ -327,6 +334,8 @@ class TestRunner:
                     s3compat_type_name_1=getattr(self, 's3compat_type_name_1', None) if storage_id == 's3compat' else None,
                     s3compat_type_name_2=getattr(self, 's3compat_type_name_2', None) if storage_id == 's3compat' else None,
                     skip_too_many_files_check=storage_info.get('skip_too_many_files_check', False),
+                    check_multipart_upload=storage_info.get('check_multipart_upload', False),
+                    s3_verification_ca_bundle=storage_info.get('s3_verification_ca_bundle'),
                 )
             )
             
@@ -374,40 +383,45 @@ class TestRunner:
             )
         )
 
-    def run_s3compatsigv4_institutional_storage_tests(self):
-        """Run S3CompatSigV4 institutional storage tests."""
-        print('\n=== S3CompatSigV4 Institutional Storage Tests ===')
-        if not self.s3compatsigv4_institutional_storage_enabled:
-            print('Skipping S3CompatSigV4 institutional storage tests (s3compatsigv4_institutional_storage_enabled=false)')
+    def run_institutional_s3_tests(self):
+        if self.s3_institutional_storage_enabled:
+            params = {
+                'storage_provider': 's3',
+                's3_access_key': self.s3_access_key_1,
+                's3_secret_key': self.s3_secret_access_key_1,
+                's3_bucket': self.s3_test_bucket_name_1,
+                'expected_s3_region': self.s3_default_region_1,
+                'institutional_storage_name': 'Amazon S3 Storage',
+                'member_idp_username': self.idp_username_non_admin,
+                'member_idp_password': self.idp_password_non_admin,
+                'skip_130mb_upload': self.skip_130mb_upload,
+            }
+        elif self.s3compatsigv4_institutional_storage_enabled:
+            params = {
+                'storage_provider': 's3compatsigv4',
+                's3_endpoint_url': self.s3compatsigv4_inst_endpoint_url,
+                's3_access_key': self.s3compatsigv4_inst_access_key,
+                's3_secret_key': self.s3compatsigv4_inst_secret_key,
+                's3_bucket': self.s3compatsigv4_inst_bucket,
+            }
+        else:
             return
 
-        missing_params = [
-            name for name in [
-                's3compatsigv4_inst_endpoint_url',
-                's3compatsigv4_inst_access_key',
-                's3compatsigv4_inst_secret_key',
-                's3compatsigv4_inst_bucket',
-            ]
-            if not getattr(self, name, None)
-        ]
-        if missing_params:
-            print('Error: Missing S3CompatSigV4 institutional storage parameters: ' + ', '.join(missing_params))
-            sys.exit(1)
+        missing = [name for name, value in params.items() if value is None or value == '']
+        if missing:
+            raise ValueError('Missing institutional S3 test parameters: ' + ', '.join(missing))
 
         self.result_notebooks.append(
             self.run_notebook(
-                'テスト手順-管理者機能-S3CompatSigV4-機関ストレージ.ipynb',
+                '取りまとめ-機関ストレージ.ipynb',
                 admin_rdm_url=self.admin_rdm_url,
                 idp_name_1=self.idp_name_institutional_admin,
                 idp_username_1=self.idp_username_institutional_admin,
                 idp_password_1=self.idp_password_institutional_admin,
-                s3_endpoint_url=self.s3compatsigv4_inst_endpoint_url,
-                s3_access_key=self.s3compatsigv4_inst_access_key,
-                s3_secret_key=self.s3compatsigv4_inst_secret_key,
-                s3_bucket=self.s3compatsigv4_inst_bucket,
                 target_organization=getattr(self, 'admin_target_organization', None),
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
+                **params,
             )
         )
 
@@ -513,6 +527,23 @@ class TestRunner:
                 exclude_notebooks=self.exclude_notebooks,
             )
         )
+
+    def run_binderhub_tests(self):
+        """Run the same OAuth BinderHub notebooks used for interactive acceptance tests."""
+        if not self.binderhub_enabled:
+            return
+        if not all((self.binderhub_binderhub_url, self.jupyterhub_username, self.jupyterhub_password)):
+            raise ValueError('BinderHub URL, JupyterHub username and password are required')
+        self.result_notebooks.append(self.run_notebook(
+            '取りまとめ-BinderHub-BinderHubアドオン.ipynb',
+            binderhub_binderhub_url=self.binderhub_binderhub_url,
+            binderhub_use_default_server=self.binderhub_use_default_server,
+            binderhub_auth_mode='jupyterhub',
+            jupyterhub_username=self.jupyterhub_username,
+            jupyterhub_password=self.jupyterhub_password,
+            skip_failed_test=self.skip_failed_test,
+            exclude_notebooks=self.exclude_notebooks,
+        ))
 
     def run_weko_tests(self):
         """Run WEKO addon tests."""
@@ -660,6 +691,7 @@ class TestRunner:
         self.result_notebooks.append(
             self.run_notebook(
                 '取りまとめ-Wiki操作.ipynb',
+                skip_wiki_collaboration=self.skip_wiki_collaboration,
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
             )
@@ -877,11 +909,12 @@ class TestRunner:
         self.run_login_tests()
         self.run_storage_tests()
         self.run_s3compatsigv4_tests()
-        self.run_s3compatsigv4_institutional_storage_tests()
+        self.run_institutional_s3_tests()
         self.run_metadata_tests()
         self.run_admin_tests()
         self.run_project_limit_tests()
         self.run_jupyterhub_tests()
+        self.run_binderhub_tests()
         self.run_weko_tests()
         self.run_mibyo_db_tests()
         self.run_workflow_tests()
