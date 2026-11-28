@@ -1,0 +1,29 @@
+<AttributeResolver xmlns="urn:mace:shibboleth:2.0:resolver"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="urn:mace:shibboleth:2.0:resolver http://shibboleth.net/schema/idp/shibboleth-attribute-resolver.xsd">
+    <AttributeDefinition id="uid" xsi:type="PrincipalName" />
+    <AttributeDefinition id="eduPersonPrincipalName" xsi:type="Scoped" scope="e2e.test">
+        <InputAttributeDefinition ref="uid" />
+    </AttributeDefinition>
+    <AttributeDefinition id="mail" xsi:type="Template">
+        <InputAttributeDefinition ref="uid" />
+        <Template>${uid}@example.com</Template>
+    </AttributeDefinition>
+    <AttributeDefinition id="displayName" xsi:type="Mapped">
+        <InputAttributeDefinition ref="uid" />
+        <ValueMap><ReturnValue>Test User 1</ReturnValue><SourceValue>testuser1</SourceValue></ValueMap>
+        <ValueMap><ReturnValue>Test Staff</ReturnValue><SourceValue>teststaff</SourceValue></ValueMap>
+        <ValueMap><ReturnValue>Test User 2</ReturnValue><SourceValue>testuser2</SourceValue></ValueMap>
+    </AttributeDefinition>
+    <AttributeDefinition id="eduPersonEntitlement" xsi:type="Mapped">
+        <InputAttributeDefinition ref="uid" />
+        <ValueMap><ReturnValue>urn:rdm:e2e:member</ReturnValue><SourceValue>testuser1</SourceValue><SourceValue>testuser2</SourceValue></ValueMap>
+        <ValueMap><ReturnValue>GakuNinRDMAdmin</ReturnValue><SourceValue>teststaff</SourceValue></ValueMap>
+    </AttributeDefinition>
+    <DataConnector id="static" xsi:type="Static" exportAttributes="givenName sn o eduPersonAffiliation">
+        <Attribute id="givenName"><Value>E2E</Value></Attribute>
+        <Attribute id="sn"><Value>User</Value></Attribute>
+        <Attribute id="o"><Value>RDM E2E Institution</Value></Attribute>
+        <Attribute id="eduPersonAffiliation"><Value>member</Value></Attribute>
+    </DataConnector>
+</AttributeResolver>

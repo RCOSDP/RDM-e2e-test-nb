@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
-Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--s3-minio] [--jupyterhub] [--binderhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki]
+Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--s3-minio] [--jupyterhub] [--binderhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki] [--shibboleth]
 USAGE
   exit 1
 fi
@@ -20,6 +20,7 @@ FLOWABLE=false
 S3COMPATSIGV4=false
 S3COMPATSIGV4_INST=false
 WIKI=false
+SHIBBOLETH=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -50,6 +51,9 @@ for arg in "$@"; do
     --wiki)
       WIKI=true
       ;;
+    --shibboleth)
+      SHIBBOLETH=true
+      ;;
     *)
       echo "Unknown argument: ${arg}" >&2
       exit 1
@@ -59,6 +63,28 @@ for arg in "$@"; do
 done
 
 cp "${BASE_CONFIG}" "${OUTPUT}"
+
+if [[ "${SHIBBOLETH}" == "true" ]]; then
+  python3 - "${OUTPUT}" <<'PY'
+import os
+import sys
+import yaml
+
+with open(sys.argv[1]) as source:
+    config = yaml.safe_load(source)
+username = {'user': 'testuser1', 'admin': 'teststaff'}[os.environ['SHIBBOLETH_ROLE']]
+config.update(
+    admin_rdm_url='http://192.168.168.167:18087/',
+    idp_name_1='RDM E2E Test IdP', idp_username_1=username,
+    idp_password_1='ci-fixture-password',
+    idp_name_2='RDM E2E Test IdP', idp_username_2='testuser2',
+    idp_password_2='ci-fixture-password',
+    institution_name='RDM E2E Institution',
+)
+with open(sys.argv[1], 'w') as output:
+    yaml.safe_dump(config, output, allow_unicode=True, sort_keys=False)
+PY
+fi
 
 if [[ "${S3_MINIO}" == "true" ]]; then
   if [[ "${S3_MINIO_INST_ENABLED:-false}" == "true" ]]; then
