@@ -52,6 +52,15 @@ mc rb "${ALIAS}/${BUCKET_NAME_1}" --force || true
 mc rb "${ALIAS}/${BUCKET_NAME_2}" --force || true
 mc mb "${ALIAS}/${BUCKET_NAME_1}"
 mc mb "${ALIAS}/${BUCKET_NAME_2}"
+
+if [ "${S3_MINIO_ENABLED:-false}" = "true" ] && [ "${S3_MINIO_INST_ENABLED:-false}" != "true" ]; then
+  mc version enable "${ALIAS}/${BUCKET_NAME_2}"
+  mkdir /tmp/s3-pagination
+  for number in \$(seq 1 1500); do
+    touch "/tmp/s3-pagination/\$(printf '%04d' "\$number")"
+  done
+  mc cp --recursive /tmp/s3-pagination/ "${ALIAS}/${BUCKET_NAME_2}/"
+fi
 mc admin user remove "${ALIAS}" "${ACCESS_KEY_1}" || true
 mc admin user remove "${ALIAS}" "${ACCESS_KEY_2}" || true
 mc admin user add "${ALIAS}" "${ACCESS_KEY_1}" "${SECRET_KEY_1}"

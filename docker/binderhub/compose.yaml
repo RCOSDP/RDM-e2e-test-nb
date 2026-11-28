@@ -1,0 +1,18 @@
+services:
+  # Built by setup_binderhub.sh install on top of JUPYTERHUB_IMAGE and BINDERHUB_IMAGE
+  hub:
+    image: rdm-e2e-jupyterhub
+    network_mode: host
+    environment:
+      OAUTHLIB_INSECURE_TRANSPORT: '1'
+    volumes:
+      - ./.state:/opt/e2e/.state
+      - /var/run/docker.sock:/var/run/docker.sock
+  binder:
+    image: rdm-e2e-binderhub
+    network_mode: host
+    environment:
+      OAUTHLIB_INSECURE_TRANSPORT: '1'
+    volumes:
+      - ./.state:/opt/e2e/.state
+      - /var/run/docker.sock:/var/run/docker.sock

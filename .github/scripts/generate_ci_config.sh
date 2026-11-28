@@ -3,7 +3,7 @@ set -xeuo pipefail
 
 if [[ $# -lt 2 ]]; then
   cat >&2 <<'USAGE'
-Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--jupyterhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki] [--shibboleth]
+Usage: generate_ci_config.sh <output_path> <base_config_yaml> [--minio] [--s3-minio] [--jupyterhub] [--binderhub] [--weko] [--flowable] [--s3compatsigv4] [--s3compatsigv4-inst] [--wiki] [--shibboleth]
 USAGE
   exit 1
 fi
@@ -12,7 +12,9 @@ OUTPUT=$1
 BASE_CONFIG=$2
 shift 2
 MINIO=false
+S3_MINIO=false
 JUPYTERHUB=false
+BINDERHUB=false
 WEKO=false
 FLOWABLE=false
 S3COMPATSIGV4=false
@@ -25,8 +27,14 @@ for arg in "$@"; do
     --minio)
       MINIO=true
       ;;
+    --s3-minio)
+      S3_MINIO=true
+      ;;
     --jupyterhub)
       JUPYTERHUB=true
+      ;;
+    --binderhub)
+      BINDERHUB=true
       ;;
     --weko)
       WEKO=true
@@ -78,7 +86,31 @@ with open(sys.argv[1], 'w') as output:
 PY
 fi
 
-if [[ "${MINIO}" == "true" ]]; then
+if [[ "${S3_MINIO}" == "true" ]]; then
+  if [[ "${S3_MINIO_INST_ENABLED:-false}" == "true" ]]; then
+    printf '\nstorages_s3: []\ns3_institutional_storage_enabled: true\n' >> "${OUTPUT}"
+  else
+    cat >> "${OUTPUT}" <<EOF
+
+storages_s3:
+  - id: 's3'
+    name: 'Amazon S3'
+    check_multipart_upload: true
+    s3_verification_ca_bundle: '${S3_MINIO_CA_BUNDLE}'
+EOF
+  fi
+  cat >> "${OUTPUT}" <<EOF
+
+s3_access_key_1: '${S3COMPAT_ACCESS_KEY_1}'
+s3_secret_access_key_1: '${S3COMPAT_SECRET_KEY_1}'
+s3_default_region_1: '${S3COMPAT_REGION}'
+s3_test_bucket_name_1: '${S3COMPAT_BUCKET_NAME_1}'
+s3_access_key_2: '${S3COMPAT_ACCESS_KEY_2}'
+s3_secret_access_key_2: '${S3COMPAT_SECRET_KEY_2}'
+s3_default_region_2: '${S3COMPAT_REGION}'
+s3_test_bucket_name_2: '${S3COMPAT_BUCKET_NAME_2}'
+EOF
+elif [[ "${MINIO}" == "true" ]]; then
   if [[ -z "${S3COMPAT_ACCESS_KEY_1:-}" || -z "${S3COMPAT_SECRET_KEY_1:-}" ]]; then
     echo "S3 compat credentials are not set" >&2
     exit 1
@@ -131,6 +163,22 @@ jupyterhub_enabled: false
 EOF
 fi
 
+if [[ "${BINDERHUB}" == "true" ]]; then
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  python3 - "$script_dir/../../docker/binderhub/.state/config.json" "$OUTPUT" <<'PYTHON'
+import json
+from pathlib import Path
+import sys
+import yaml
+config = json.loads(Path(sys.argv[1]).read_text())
+with open(sys.argv[2], 'a') as out:
+    out.write('\n')
+    yaml.safe_dump(dict(binderhub_enabled=True,
+        binderhub_binderhub_url=config['binder_origin'],
+        jupyterhub_username=config['username'], jupyterhub_password=config['password']), out)
+PYTHON
+fi
+
 if [[ "${WEKO}" == "true" ]]; then
   WEKO_URL_VALUE=${WEKO_URL:-http://localhost}
   WEKO_ADMIN_EMAIL_VALUE=${WEKO_ADMIN_EMAIL:-}
@@ -139,6 +187,7 @@ if [[ "${WEKO}" == "true" ]]; then
   WEKO_USER_PASSWORD_VALUE=${WEKO_USER_PASSWORD:-}
   WEKO_INSTITUTION_NAME_VALUE=${WEKO_INSTITUTION_NAME:-}
   WEKO_INDEX_NAME_VALUE=${WEKO_INDEX_NAME:-'Sample Index'}
+  WEKO_INDEX_NAME_JA_VALUE=${WEKO_INDEX_NAME_JA:-'サンプルインデックス'}
   WEKO_DOCKER_COMPOSE_PATH_VALUE=${WEKO_DOCKER_COMPOSE_PATH:-}
   SWORD_MAPPING_ID_VALUE=${SWORD_MAPPING_ID:-30002}
   WEKO_TEST_MODE_VALUE=${WEKO_TEST_MODE:-direct}
@@ -154,6 +203,7 @@ weko_user_email: '${WEKO_USER_EMAIL_VALUE}'
 weko_user_password: '${WEKO_USER_PASSWORD_VALUE}'
 weko_institution_name: '${WEKO_INSTITUTION_NAME_VALUE}'
 weko_index_name: '${WEKO_INDEX_NAME_VALUE}'
+weko_index_name_ja: '${WEKO_INDEX_NAME_JA_VALUE}'
 weko_docker_compose_path: '${WEKO_DOCKER_COMPOSE_PATH_VALUE}'
 sword_mapping_id: ${SWORD_MAPPING_ID_VALUE}
 weko_test_mode: '${WEKO_TEST_MODE_VALUE}'
