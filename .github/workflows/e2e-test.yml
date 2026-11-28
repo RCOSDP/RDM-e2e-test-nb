@@ -35,22 +35,14 @@ on:
         description: 'Real CAS image; overrides CAS source settings for Shibboleth tests (not FakeCAS)'
         required: false
         default: ''
-      cas_repository:
-        description: 'CAS source repository for Shibboleth login tests'
+      cas_source:
+        description: 'Shibboleth login CAS source as owner/repo@ref (default: RCOSDP/RDM-cas-overlay@develop)'
         required: false
-        default: 'RCOSDP/RDM-cas-overlay'
-      cas_branch:
-        description: 'CAS source ref for Shibboleth login tests'
+        default: ''
+      sp_source:
+        description: 'Shibboleth SP source as owner/repo@ref (default: RCOSDP/RDM-Shibboleth-SP@main)'
         required: false
-        default: 'develop'
-      sp_repository:
-        description: 'Shibboleth SP source repository'
-        required: false
-        default: 'RCOSDP/RDM-Shibboleth-SP'
-      sp_branch:
-        description: 'Shibboleth SP source ref'
-        required: false
-        default: 'main'
+        default: ''
       mfr_image:
         description: 'Custom MFR image (default: niicloudoperation/rdm-modular-file-renderer:latest)'
         required: false
@@ -112,20 +104,12 @@ on:
         required: false
         default: true
         type: boolean
-      wiki_repository:
-        description: 'RDM-wiki-frontend repository (default: RCOSDP/RDM-wiki-frontend)'
+      wiki_source:
+        description: 'Wiki frontend source as owner/repo@branch-or-tag (default: RCOSDP/RDM-wiki-frontend@develop)'
         required: false
         default: ''
-      wiki_branch:
-        description: 'RDM-wiki-frontend branch (default: develop)'
-        required: false
-        default: ''
-      y_websocket_repository:
-        description: 'RDM-y-websocket repository (default: RCOSDP/RDM-y-websocket)'
-        required: false
-        default: ''
-      y_websocket_branch:
-        description: 'RDM-y-websocket branch (default: master)'
+      y_websocket_source:
+        description: 'Wiki y-websocket source as owner/repo@branch-or-tag (default: RCOSDP/RDM-y-websocket@master)'
         required: false
         default: ''
       skip_failed:
@@ -154,7 +138,9 @@ jobs:
       binderhub_custom: ${{ steps.binderhub_params.outputs.binderhub_source != '' }}
       binderhub_jupyterhub_custom: ${{ steps.binderhub_params.outputs.jupyterhub_source != '' }}
 
-      shibboleth_cas_image: ${{ steps.shibboleth_params.outputs.cas_image || 'rdm-cas:shibboleth' }}
+      y_websocket_repository: ${{ steps.source_params.outputs.y_websocket_repository }}
+      y_websocket_branch: ${{ steps.source_params.outputs.y_websocket_branch }}
+      shibboleth_cas_image: ${{ steps.source_params.outputs.cas_image || 'rdm-cas:shibboleth' }}
     steps:
     - name: Checkout test repository
       uses: actions/checkout@v4
@@ -341,22 +327,61 @@ jobs:
         cd ..
         docker save -o prebuilt-images/rdm-waterbutler-custom.tar rdm-waterbutler:custom
 
+    - name: Parse CAS, SP and Wiki source parameters
+      id: source_params
+      run: |
+        python3 - <<'PY'
+        import json
+        import os
+        import re
+
+        with open(os.environ['GITHUB_EVENT_PATH']) as source:
+            event = json.load(source)
+        if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
+            parameters = dict(re.findall(
+                r'^-[ \t]*(CAS_IMAGE|(?:CAS|SP|WIKI|Y_WEBSOCKET)_(?:REPOSITORY|BRANCH)):[ \t]*([^\r\n]*)',
+                event['pull_request']['body'] or '', re.MULTILINE))
+        elif os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch':
+            inputs = event['inputs']
+            parameters = {'CAS_IMAGE': inputs.get('cas_image', '')}
+            for service in ('cas', 'sp', 'wiki', 'y_websocket'):
+                source = inputs.get(f'{service}_source', '').strip()
+                if source:
+                    match = re.fullmatch(r'([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^\s]+)', source)
+                    if not match:
+                        raise ValueError(f'{service}_source must be owner/repo@ref')
+                    parameters[f'{service.upper()}_REPOSITORY'], parameters[f'{service.upper()}_BRANCH'] = match.groups()
+        else:
+            parameters = {}
+        defaults = {
+            'CAS_IMAGE': '',
+            'CAS_REPOSITORY': 'RCOSDP/RDM-cas-overlay',
+            'CAS_BRANCH': 'develop',
+            'SP_REPOSITORY': 'RCOSDP/RDM-Shibboleth-SP',
+            'SP_BRANCH': 'main',
+            'WIKI_REPOSITORY': 'RCOSDP/RDM-wiki-frontend',
+            'WIKI_BRANCH': 'develop',
+            'Y_WEBSOCKET_REPOSITORY': 'RCOSDP/RDM-y-websocket',
+            'Y_WEBSOCKET_BRANCH': 'master',
+        }
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            for key, default in defaults.items():
+                value = parameters.get(key, '').strip() or default
+                print(f'{key.lower()}={value}', file=output)
+        PY
+
     - name: Build shared Wiki-enabled OSF image
       id: osf_image
       shell: bash
       env:
         PR_BODY: ${{ github.event.pull_request.body }}
-        WIKI_REPO: ${{ inputs.wiki_repository }}
-        WIKI_BRANCH: ${{ inputs.wiki_branch }}
+        WIKI_REPO: ${{ steps.source_params.outputs.wiki_repository }}
+        WIKI_BRANCH: ${{ steps.source_params.outputs.wiki_branch }}
         OSF_BASE_IMAGE: ${{ inputs.osf_image }}
       run: |
         if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-          WIKI_REPO=$(grep -m1 -oP '^-\s*WIKI_REPOSITORY:\s*\K.*$' <<< "$PR_BODY" | tr -d ' \r' || true)
-          WIKI_BRANCH=$(grep -m1 -oP '^-\s*WIKI_BRANCH:\s*\K.*$' <<< "$PR_BODY" | tr -d ' \r' || true)
           OSF_BASE_IMAGE=$(grep -m1 -oP '^-\s*OSF_IMAGE:\s*\K.*$' <<< "$PR_BODY" | tr -d ' \r' || true)
         fi
-        WIKI_REPO="${WIKI_REPO:-RCOSDP/RDM-wiki-frontend}"
-        WIKI_BRANCH="${WIKI_BRANCH:-develop}"
 
         git clone --depth=1 --branch "$WIKI_BRANCH" -- "https://github.com/${WIKI_REPO}.git" RDM-wiki-frontend
         echo "Wiki frontend commit: $(git -C RDM-wiki-frontend rev-parse HEAD)"
@@ -442,57 +467,26 @@ jobs:
           -t binderhub-jupyterhub:custom CS-jupyterhub
         docker save -o prebuilt-images/binderhub-jupyterhub-custom.tar binderhub-jupyterhub:custom
 
-    - name: Parse Shibboleth source parameters
-      id: shibboleth_params
-      run: |
-        python3 - <<'PY'
-        import json
-        import os
-        import re
-
-        with open(os.environ['GITHUB_EVENT_PATH']) as source:
-            event = json.load(source)
-        if os.environ['GITHUB_EVENT_NAME'] == 'pull_request':
-            parameters = dict(re.findall(
-                r'^-[ \t]*(CAS_IMAGE|CAS_REPOSITORY|CAS_BRANCH|SP_REPOSITORY|SP_BRANCH):[ \t]*([^\r\n]*)',
-                event['pull_request']['body'] or '', re.MULTILINE))
-        elif os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch':
-            parameters = {key.upper(): value for key, value in event['inputs'].items()}
-        else:
-            parameters = {}
-        defaults = {
-            'CAS_IMAGE': '',
-            'CAS_REPOSITORY': 'RCOSDP/RDM-cas-overlay',
-            'CAS_BRANCH': 'develop',
-            'SP_REPOSITORY': 'RCOSDP/RDM-Shibboleth-SP',
-            'SP_BRANCH': 'main',
-        }
-        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-            for key, default in defaults.items():
-                value = parameters.get(key, '').strip() or default
-                print(f'{key.lower()}={value}', file=output)
-        PY
-
     - name: Checkout CAS source
-      if: steps.shibboleth_params.outputs.cas_image == ''
+      if: steps.source_params.outputs.cas_image == ''
       uses: actions/checkout@v4
       with:
-        repository: ${{ steps.shibboleth_params.outputs.cas_repository }}
-        ref: ${{ steps.shibboleth_params.outputs.cas_branch }}
+        repository: ${{ steps.source_params.outputs.cas_repository }}
+        ref: ${{ steps.source_params.outputs.cas_branch }}
         path: RDM-cas-overlay
 
     - name: Checkout Shibboleth SP source
       uses: actions/checkout@v4
       with:
-        repository: ${{ steps.shibboleth_params.outputs.sp_repository }}
-        ref: ${{ steps.shibboleth_params.outputs.sp_branch }}
+        repository: ${{ steps.source_params.outputs.sp_repository }}
+        ref: ${{ steps.source_params.outputs.sp_branch }}
         path: RDM-Shibboleth-SP
 
     - name: Build Shibboleth authentication images
       env:
-        CAS_IMAGE: ${{ steps.shibboleth_params.outputs.cas_image }}
-        CAS_REPOSITORY: ${{ steps.shibboleth_params.outputs.cas_repository }}
-        SP_REPOSITORY: ${{ steps.shibboleth_params.outputs.sp_repository }}
+        CAS_IMAGE: ${{ steps.source_params.outputs.cas_image }}
+        CAS_REPOSITORY: ${{ steps.source_params.outputs.cas_repository }}
+        SP_REPOSITORY: ${{ steps.source_params.outputs.sp_repository }}
       run: |
         mkdir -p shibboleth-images
         images=(rdm-sp:shibboleth rdm-idp:shibboleth)
@@ -1388,23 +1382,14 @@ jobs:
             echo "WIKI_ENABLED=true" >> $GITHUB_ENV
           fi
 
-          # y-websocket parameters from PR body
-          Y_WEBSOCKET_REPO_OVERRIDE=$(grep -oP '^-\s*Y_WEBSOCKET_REPOSITORY:\s*\K.*$' /tmp/pr_body.txt \
-            | head -1 | tr -d ' \r' || true)
-          Y_WEBSOCKET_BRANCH_OVERRIDE=$(grep -oP '^-\s*Y_WEBSOCKET_BRANCH:\s*\K.*$' /tmp/pr_body.txt \
-            | head -1 | tr -d ' \r' || true)
-          echo "Y_WEBSOCKET_CUSTOM_REPO=${Y_WEBSOCKET_REPO_OVERRIDE}" >> $GITHUB_ENV
-          echo "Y_WEBSOCKET_CUSTOM_BRANCH=${Y_WEBSOCKET_BRANCH_OVERRIDE}" >> $GITHUB_ENV
-        else
-          echo "Y_WEBSOCKET_CUSTOM_REPO=${{ github.event.inputs.y_websocket_repository }}" >> $GITHUB_ENV
-          echo "Y_WEBSOCKET_CUSTOM_BRANCH=${{ github.event.inputs.y_websocket_branch }}" >> $GITHUB_ENV
         fi
 
     - name: Build and start y-websocket
       if: env.WIKI_ENABLED == 'true'
+      env:
+        Y_WS_REPO: ${{ needs.build-images.outputs.y_websocket_repository }}
+        Y_WS_BRANCH: ${{ needs.build-images.outputs.y_websocket_branch }}
       run: |
-        Y_WS_REPO="${Y_WEBSOCKET_CUSTOM_REPO:-RCOSDP/RDM-y-websocket}"
-        Y_WS_BRANCH="${Y_WEBSOCKET_CUSTOM_BRANCH:-master}"
         git clone --depth=50 -b "${Y_WS_BRANCH}" "https://github.com/${Y_WS_REPO}.git" RDM-y-websocket
         docker build --pull -t rdm/y-websocket:local RDM-y-websocket
         docker compose -f e2e-tests/docker/y-websocket/docker-compose.yml up -d
