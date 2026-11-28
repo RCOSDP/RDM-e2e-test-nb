@@ -81,6 +81,7 @@ class TestRunner:
         self.gateway_base_url = None
         # Wiki specific parameters
         self.wiki_enabled = False
+        self.skip_wiki_collaboration = False
         # Institutional admin authorization test
         self.institutional_admin_authorization_enabled = False
         self.user_guid = None
@@ -688,6 +689,7 @@ class TestRunner:
         self.result_notebooks.append(
             self.run_notebook(
                 '取りまとめ-Wiki操作.ipynb',
+                skip_wiki_collaboration=self.skip_wiki_collaboration,
                 skip_failed_test=self.skip_failed_test,
                 exclude_notebooks=self.exclude_notebooks,
             )
