@@ -9,6 +9,19 @@ import traceback
 from playwright.async_api import expect
 
 
+def terms_banner(page):
+    return page.locator(
+        '#alert-container:has(input#accept[type="checkbox"]):has(button#continue), '
+        '[data-analytics-scope="ToS consent banner"] .jumbotron:has(input[name="acceptedTermsOfService"])'
+    )
+
+
+async def accept_terms(banner):
+    await banner.get_by_role('checkbox').check()
+    await banner.locator('button#continue, button[data-analytics-name="Continue"]').click()
+    await expect(banner).to_be_hidden()
+
+
 async def login_cas(page, username, password):
     # find_element_by_xpath_with_retry(driver, '').send_keys(username)
     # find_element_by_xpath_with_retry(driver, '//input[@name = "password"]').send_keys(password)
@@ -227,22 +240,17 @@ _login_handlers = {
 }
 
 async def expect_dashboard(page, transition_timeout=30000, retries=3):
-    # 429 Too many requestsで表示できない場合があるので、複数回リロードする
-    remain = retries
-    while remain > 0:
+    dashboard = page.locator('//*[text() = "プロジェクト管理者" or contains(text(), "まだプロジェクトがありません。")]')
+    for _ in range(retries - 1):
         try:
-            # GRDMのボタンが表示されることを確認
-            await expect(page.locator('//*[text() = "プロジェクト管理者" or contains(text(), "まだプロジェクトがありません。")]')).to_be_visible(timeout=transition_timeout)
-            break
-        except:
-            if remain <= 0:
-                raise
-            remain -= 1
-            traceback.print_exc()
-            print('Retrying...')
-            # 1分待って再チャレンジ
-            await asyncio.sleep(60)            
-    
+            await expect(dashboard).to_be_visible(timeout=transition_timeout)
+            return
+        except AssertionError:
+            # A rate-limited dashboard can recover after reloading.
+            await asyncio.sleep(60)
+            await page.reload()
+    await expect(dashboard).to_be_visible(timeout=transition_timeout)
+
 async def ensure_project_exists(page, project_name, transition_timeout=30000, existence_timeout=10000):
     await expect(page.locator('//*[@data-test-create-project-modal-button]')).to_have_count(1, timeout=transition_timeout)
     try:
@@ -608,6 +616,9 @@ async def open_edit_wiki(page, transition_timeout=60000):
     await page.locator('//div[@id="editWysiwyg"]//span[normalize-space()="編集"]').click()
     await expect(page.locator('#mMenuBar')).to_be_visible(timeout=transition_timeout)
     await expect(page.locator('#mEditor .ProseMirror[contenteditable="true"]')).to_be_visible(timeout=transition_timeout)
+    await expect(page.locator('#collaborativeStatus')).to_contain_text('Live editing mode', timeout=transition_timeout)
+    # Wiki installs the collaboration undo history after its connection callback.
+    await page.wait_for_timeout(500)
 
 async def select_text_range(page, text, transition_timeout=60000):
     editor = page.locator('#mEditor .ProseMirror[contenteditable="true"]')

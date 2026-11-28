@@ -519,7 +519,7 @@ jobs:
   e2e-test:
     needs: build-images
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: ${{ matrix.test-group.timeout_minutes || 120 }}
     strategy:
       fail-fast: false
       matrix:
@@ -624,6 +624,7 @@ jobs:
               テスト手順-管理者機能-機関ストレージのクォータ.ipynb
               取りまとめ-管理者機能-プロジェクト制限数.ipynb
           - name: migration-from-20250906
+            timeout_minutes: 210
             display_name: "Migration Test from 20250906"
             include_admin: true
             migration_from:
@@ -880,6 +881,7 @@ jobs:
             member_display_enabled: false
             mapcore_group_enabled: false
           - name: user-workflow-batch
+            timeout_minutes: 210
             display_name: "User Tests (Flowable Batch)"
             include_admin: true
             skip_admin: true
@@ -1229,6 +1231,8 @@ jobs:
       working-directory: e2e-tests
       run: |
         # Install without cache to save disk space
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg fonts-noto-cjk
         python -m pip install --upgrade pip
         pip install --no-cache-dir -r requirements.txt
         pip install --no-cache-dir papermill
@@ -2134,7 +2138,7 @@ jobs:
         ls -la result/test-summary-*.xlsx || echo "No Excel summary generated"
         ls -la result/screenshots/ || echo "No screenshots generated"
 
-    - name: Upload Excel summary with screenshots
+    - name: Upload Excel summary with screenshots and procedure videos
       if: always()
       uses: actions/upload-artifact@v4
       with:
@@ -2142,6 +2146,7 @@ jobs:
         path: |
           e2e-tests/result/test-summary-*.xlsx
           e2e-tests/result/screenshots/
+          e2e-tests/result/**/report.webm
         retention-days: 30
       id: excel-upload
 

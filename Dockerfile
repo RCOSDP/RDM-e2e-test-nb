@@ -10,11 +10,11 @@ RUN pip --no-cache-dir install pytest-playwright && \
 RUN mamba install --quiet --yes awscli passlib && mamba clean --all -f -y
 
 RUN apt-get update && \
-    apt-get -y install language-pack-ja firefox && \
+    apt-get -y install language-pack-ja firefox ffmpeg fonts-noto-cjk && \
     dpkg-reconfigure locales && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir openpyxl
+    pip install --no-cache-dir openpyxl "Pillow>=9.2" "zxing-cpp>=3.0"
 RUN rm -fr $HOME/*
 ENV LANGUAGE=ja_JP.UTF-8 LANG=ja_JP.UTF-8
 

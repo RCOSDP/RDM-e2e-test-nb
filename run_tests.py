@@ -14,7 +14,9 @@ import traceback
 import subprocess
 import shutil
 from datetime import datetime
+from pathlib import Path
 import papermill as pm
+from scripts.video_engine import execute_notebook
 import nbformat
 
 
@@ -228,10 +230,10 @@ class TestRunner:
             subprocess.run(['df', '-h'])
         
         try:
-            pm.execute_notebook(
+            execute_notebook(
                 base_notebook,
                 result_notebook,
-                parameters=params
+                parameters=params, skip_failed_test=self.skip_failed_test
             )
             print(f'  Status: SUCCESS')
         except pm.PapermillExecutionError:
@@ -831,6 +833,10 @@ class TestRunner:
                     'traceback': output.get('traceback', [])
                 })
         
+        video_warning = Path(notebook_path).with_suffix('') / 'report-video-error.txt'
+        if video_warning.exists():
+            all_errors.append({'notebook': notebook_path, 'cell': None, 'evalue': video_warning.read_text()})
+
         # Check notebooks/ subdirectory recursively
         base_path = os.path.splitext(notebook_path)[0]
         notebooks_dir = os.path.join(base_path, 'notebooks')
@@ -950,10 +956,14 @@ class TestRunner:
                     # Show relative path from result directory
                     rel_path = os.path.relpath(notebook_path, os.path.dirname(self.result_dir))
                     error_msg += f"\n{rel_path}:\n"
-                    for error in errors[:3]:  # Show first 3 errors per notebook
+                    step_errors = [error for error in errors if error['cell'] is not None]
+                    for error in step_errors[:3]:
                         error_msg += f"  - Cell {error['cell']}: {error['ename']}: {error['evalue']}\n"
-                    if len(errors) > 3:
-                        error_msg += f"  ... and {len(errors) - 3} more error(s)\n"
+                    if len(step_errors) > 3:
+                        error_msg += f"  ... and {len(step_errors) - 3} more error(s)\n"
+                    for error in errors:
+                        if error['cell'] is None:
+                            error_msg += f"  - {error['evalue']}\n"
                 
                 print(error_msg, file=sys.stderr)
                 raise RuntimeError(f"{len(notebooks_with_errors)} notebook(s) failed")

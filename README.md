@@ -93,10 +93,9 @@ GitHub Actionsのワークフローでは、matrix設定で`migration_from`を�
 
 ### 動画による確認
 
-各テストの実行過程は動画（.webm形式）として記録されています：
-- 動画はブラウザで直接再生可能
-- テストの各ステップがどのように実行されたかを視覚的に確認できる
-- エラー発生時の画面状態を正確に把握できる
+取りまとめNotebookやCIで手順Notebookを実行すると、各手順Notebookの結果ディレクトリに `report.webm` が保存されます。冒頭にシナリオ名、操作画面の下に手順の字幕が表示されます。タブやブラウザを切り替える手順では、操作対象の画面を追跡します。CIでは `test-summary-excel-<テストグループ名>` から、Excel報告書と各手順の動画をまとめてダウンロードできます。
+
+Dockerを使わずに実行する場合は、`requirements.txt` に加えて FFmpeg と日本語フォント（Ubuntuでは `ffmpeg`、`fonts-noto-cjk`）をインストールしてください。
 
 ### Notebookでの詳細確認
 
